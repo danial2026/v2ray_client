@@ -396,21 +396,6 @@ Ensure VPN mode is active (not proxy-only). Check for DNS configuration issues i
 
 ---
 
-## Version History
-
-### v0.0.5 (Current)
-
-- Custom v2ray_dan plugin implementation
-- Built-in browser with network diagnostics
-- Full logging system (App, Core, tun2socks)
-- Kill switch protection
-- VPN and Proxy-Only modes
-- Intelligent ping system
-- Modern minimal UI
-- DNS leak protection
-
----
-
 ## Contributing
 
 This is a weekend project and not production-ready, but contributions are welcome. Whether it's bug reports, feature requests, or pull requests, feel free to open an issue or PR on GitHub.
