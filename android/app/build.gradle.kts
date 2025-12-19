@@ -17,7 +17,7 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+        jvmTarget = "17"
     }
 
     defaultConfig {
@@ -63,13 +63,25 @@ android {
             }
         }
     }
-    
+
     // Custom APK naming
     applicationVariants.all {
-        outputs.all {
-            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            if (buildType.name == "release") {
-                output.outputFileName = "flaming-cherubim-v${defaultConfig.versionName}.apk"
+        val variant = this
+        if (variant.buildType.name == "release") {
+            variant.outputs.all {
+                val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+                val baseName = "flaming-cherubim-v${variant.versionName}"
+                val currentName = output.name // e.g. "release" or "arm64-v8aRelease"
+                
+                val abi = when {
+                    currentName.contains("arm64", ignoreCase = true) -> "arm64-v8a"
+                    currentName.contains("v7a", ignoreCase = true) -> "armeabi-v7a"
+                    currentName.contains("x86_64", ignoreCase = true) -> "x86_64"
+                    currentName.contains("universal", ignoreCase = true) -> "universal"
+                    else -> null
+                }
+                
+                output.outputFileName = if (abi != null) "$baseName-$abi.apk" else "$baseName.apk"
             }
         }
     }
