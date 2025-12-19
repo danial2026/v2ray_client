@@ -503,43 +503,46 @@ class _PingSettingsScreenState extends State<PingSettingsScreen> {
           ),
           child: Column(
             children: [
-              Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.asset(
-                      'assets/logo.png',
-                      width: 48,
-                      height: 48,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        // Fallback to icon if image not found
-                        return const Icon(Icons.info_outline, color: AppTheme.accentColor, size: 36);
-                      },
+              GestureDetector(
+                onTap: () => _launchURL('https://github.com/danial2026/v2ray_client/'),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.asset(
+                        'assets/logo.png',
+                        width: 48,
+                        height: 48,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          // Fallback to icon if image not found
+                          return const Icon(Icons.info_outline, color: AppTheme.accentColor, size: 36);
+                        },
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Flaming Cherubim', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
-                        GestureDetector(
-                          onTap: () => _launchURL('https://www.danials.org/'),
-                          child: Text(
-                            'v${_packageInfo.version}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.white.withValues(alpha: 0.4),
-                              fontWeight: FontWeight.w600,
-                              decoration: TextDecoration.underline,
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Flaming Cherubim', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                          GestureDetector(
+                            onTap: () => _launchURL('https://www.danials.org/'),
+                            child: Text(
+                              'v${_packageInfo.version}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.white.withValues(alpha: 0.4),
+                                fontWeight: FontWeight.w600,
+                                decoration: TextDecoration.underline,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               const SizedBox(height: 24),
               const Divider(color: Colors.white10),
