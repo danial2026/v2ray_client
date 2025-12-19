@@ -66,6 +66,20 @@
                 android:value="vpn" 
                 tools:replace="android:value" />
         </service>
+
+        <receiver
+            android:name="com.v2ray.v2ray.ConnectWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.v2ray.v2ray.action.WIDGET_CONNECT" />
+                <action android:name="com.v2ray.v2ray.action.WIDGET_DISCONNECT" />
+                <action android:name="com.v2ray.v2ray.action.UPDATE_WIDGET_STATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/connect_widget_info" />
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

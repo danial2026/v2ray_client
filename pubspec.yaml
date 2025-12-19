@@ -2,7 +2,7 @@ name: v2ray
 description: "A high-performance, modern V2Ray VPN client for Android with support for VLESS, VMess, and Reality protocols."
 publish_to: 'none'
 
-version: 0.0.6
+version: 0.0.7
 
 environment:
   sdk: ^3.10.0
@@ -29,6 +29,7 @@ dependencies:
   webview_flutter: ^4.4.4
   package_info_plus: ^9.0.0
   url_launcher: ^6.3.2
+  flutter_markdown_plus: ^1.0.5
 
 dev_dependencies:
   flutter_test:
@@ -40,3 +41,4 @@ flutter:
   
   assets:
     - assets/logo.png
+    - CHANGELOG.md

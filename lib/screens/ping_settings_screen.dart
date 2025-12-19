@@ -6,6 +6,7 @@ import '../models/dns_preset.dart';
 import '../services/storage_service.dart';
 import '../services/v2ray_service.dart';
 import '../theme/app_theme.dart';
+import 'changelog_page.dart';
 
 class PingSettingsScreen extends StatefulWidget {
   final PingSettings currentSettings;
@@ -544,6 +545,15 @@ class _PingSettingsScreenState extends State<PingSettingsScreen> {
               const Divider(color: Colors.white10),
               const SizedBox(height: 16),
               _buildAboutItem(label: 'DEVELOPER', value: 'Danial', icon: Icons.person_outline),
+              const SizedBox(height: 12),
+              _buildAboutItem(
+                label: 'VERSION',
+                value: 'v${_packageInfo.version}',
+                icon: Icons.info_outline,
+                onTap: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const ChangelogPage()));
+                },
+              ),
               const SizedBox(height: 12),
               _buildAboutItem(
                 label: 'WEBSITE',

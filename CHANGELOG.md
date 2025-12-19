@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.7] - 2025-12-20
+### Added
+- Android home screen widget for quick VPN connect/disconnect control.
+- In-app changelog viewer in Settings page (About section).
+
 ## [0.0.6] - 2025-12-20
 ### Fixed
 - Fixed critical crash in release builds caused by R8 obfuscation stripping V2Ray native bindings.

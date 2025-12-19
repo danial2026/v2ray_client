@@ -35,11 +35,24 @@ class V2RayVPNService : VpnService(), V2RayServicesListener {
     private var setupTimeoutHandler: android.os.Handler? = null
     private var setupTimeoutRunnable: Runnable? = null
 
+    companion object {
+        const val ACTION_STOP_VPN = "com.v2ray.dan.action.STOP_VPN"
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val command = intent?.getIntExtra("COMMAND", 0)
-        Log.i(TAG, "onStartCommand: command=$command")
+        Log.i(TAG, "onStartCommand: command=$command action=${intent?.action}")
         Utilities.broadcastLog(this, "Service: onStartCommand (cmd: $command)", "INFO")
         
+        if (intent?.action == ACTION_STOP_VPN || command == AppConfigs.V2RAY_SERVICE_COMMANDS.STOP_SERVICE) {
+            Utilities.broadcastLog(this, "Service: Stopping service command received", "INFO")
+            Utilities.broadcastStatus(this, "disconnecting")
+            isRunning = false // Stop supervisor loops first
+            stopAllProcess()
+            Utilities.broadcastStatus(this, "disconnected")
+            stopSelf()
+            return Service.START_NOT_STICKY
+        }
         if (command == AppConfigs.V2RAY_SERVICE_COMMANDS.START_SERVICE) {
             Utilities.copyAssets(this)
             V2RayCoreManager.setUpListener(this)
@@ -69,13 +82,6 @@ class V2RayVPNService : VpnService(), V2RayServicesListener {
             } else {
                 Utilities.broadcastLog(this, "Service: Config is null, cannot start", "ERROR")
             }
-        } else if (command == AppConfigs.V2RAY_SERVICE_COMMANDS.STOP_SERVICE) {
-            Utilities.broadcastLog(this, "Service: Stopping service command received", "INFO")
-            Utilities.broadcastStatus(this, "disconnecting")
-            isRunning = false // Stop supervisor loops first
-            stopAllProcess()
-            Utilities.broadcastStatus(this, "disconnected")
-            stopSelf()
         }
         return Service.START_STICKY
     }
@@ -138,6 +144,7 @@ class V2RayVPNService : VpnService(), V2RayServicesListener {
         try {
             startForeground(1, createNotification())
             Utilities.broadcastLog(this, "Service: startForeground called", "INFO")
+            broadcastWidgetState(true) // Notify widget
         } catch (e: Exception) {
             Utilities.broadcastLog(this, "Service: startForeground failed: ${e.message}", "ERROR")
         }
@@ -387,6 +394,7 @@ class V2RayVPNService : VpnService(), V2RayServicesListener {
     private fun stopAllProcess() {
         Utilities.broadcastLog(this, "Service: Cleanup started", "INFO")
         isRunning = false
+        broadcastWidgetState(false) // Notify widget
         
         // CRITICAL: Cancel timeout handler to prevent spurious setup() after disconnect
         setupTimeoutRunnable?.let { runnable ->
@@ -449,5 +457,16 @@ class V2RayVPNService : VpnService(), V2RayServicesListener {
     override fun onDestroy() {
         stopAllProcess()
         super.onDestroy()
+    }
+
+    private fun broadcastWidgetState(isConnected: Boolean) {
+        try {
+            val intent = Intent("com.v2ray.v2ray.action.UPDATE_WIDGET_STATE")
+            intent.`package` = "com.v2ray.v2ray" // Target the app package specifically
+            intent.putExtra("is_connected", isConnected)
+            sendBroadcast(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to broadcast widget state: ${e.message}")
+        }
     }
 }
