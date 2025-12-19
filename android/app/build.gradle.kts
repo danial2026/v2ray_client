@@ -63,6 +63,16 @@ android {
             }
         }
     }
+    
+    // Custom APK naming
+    applicationVariants.all {
+        outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            if (buildType.name == "release") {
+                output.outputFileName = "flaming-cherubim-v${defaultConfig.versionName}.apk"
+            }
+        }
+    }
 }
 
 flutter {
