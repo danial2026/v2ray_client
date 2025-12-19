@@ -12,6 +12,10 @@
 # V2Ray Dan Plugin
 -keep class com.v2ray.dan.** { *; }
 
+# V2Ray Go Bindings (gomobile)
+-keep class libv2ray.** { *; }
+-keep class go.** { *; }
+
 # Prevent obfuscation of native methods
 -keepclasseswithmembernames class * {
     native <methods>;
