@@ -233,6 +233,13 @@ class ConfigGenerator {
         return """
         {
           "log": { "loglevel": "warning" },
+          "dns": {
+            "servers": [
+              "8.8.8.8",
+              "1.1.1.1",
+              "localhost"
+            ]
+          },
           "inbounds": [
             {
               "tag": "socks-in",
@@ -268,7 +275,8 @@ class ConfigGenerator {
           "routing": {
             "domainStrategy": "IPIfNonMatch",
             "rules": [
-              { "type": "field", "outboundTag": "proxy", "network": "tcp,udp" }
+              { "type": "field", "outboundTag": "proxy", "network": "tcp,udp" },
+              { "type": "field", "port": 53, "outboundTag": "direct" }
             ]
           }
         }
@@ -305,8 +313,10 @@ class V2RayRunner {
             process = Process()
             process?.executableURL = URL(fileURLWithPath: binaryPath)
             process?.arguments = ["run", "-c", configPath]
-            process?.standardOutput = FileHandle.nullDevice 
-            process?.standardError = FileHandle.nullDevice
+            
+            // PIPE OUTPUT TO CONSOLE FOR DEBUGGING
+            process?.standardOutput = FileHandle.standardOutput
+            process?.standardError = FileHandle.standardError
             
             try process?.run()
             log("✓ V2Ray core started (PID: \(process?.processIdentifier ?? 0))")
@@ -357,11 +367,38 @@ class IPChecker {
     }
 }
 
+func killPortConflict() {
+    print("🧹 Checking for port conflicts on 10808/10809...")
+    // Kill whatever is on port 10808 (SOCKS) and 10809 (HTTP)
+    let ports = [10808, 10809]
+    for port in ports {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "lsof -t -i:\(port) | xargs kill -9"]
+        // Suppress output, we don't care if it fails (no process found)
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
+        process.waitUntilExit()
+    }
+    // Also explicitly kill v2ray just in case
+    let killall = Process()
+    killall.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+    killall.arguments = ["v2ray"]
+    killall.standardOutput = FileHandle.nullDevice
+    killall.standardError = FileHandle.nullDevice
+    try? killall.run()
+    killall.waitUntilExit()
+}
+
 // MAIN EXECUTION
 func main() {
     print("\n🔎 --- V2Ray Independent Test Runner --- 🔍\n")
     
-    // 0. Get Link
+    // 0. Cleanup Previous Instances
+    killPortConflict()
+    
+    // 1. Get Link
     var vlessLink = ""
     if CommandLine.arguments.count > 1 {
         vlessLink = CommandLine.arguments[1]
