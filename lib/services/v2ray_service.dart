@@ -217,6 +217,16 @@ class V2RayService {
       return false;
     }
 
+    // macOS: Force proxy-only mode since full VPN requires Network Extension setup
+    if (Platform.isMacOS && !proxyOnly) {
+      _logger.warning('========== macOS VPN Mode Not Available ==========');
+      _logger.warning('Full VPN mode on macOS requires Network Extension setup.');
+      _logger.warning('Switching to Proxy-Only mode automatically.');
+      _logger.warning('Configure apps to use SOCKS5: 127.0.0.1:10808 or HTTP: 127.0.0.1:10809');
+      _logger.warning('==================================================');
+      proxyOnly = true;
+    }
+
     try {
       // Use a slightly longer timeout to prevent premature "stuck" declarations
       return await _runConnectLogic(server, customDns, proxyOnly, useSystemDns).timeout(
