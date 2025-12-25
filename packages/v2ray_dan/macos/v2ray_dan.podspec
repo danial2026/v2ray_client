@@ -10,6 +10,7 @@ Custom V2Ray implementation for Flutter (macOS)
   s.author           = { 'Danial' => 'danial@danials.org' }
   s.source           = { :path => '.' }
   s.source_files     = 'Classes/**/*'
+  s.resources        = 'Resources/**/*'
   s.dependency 'FlutterMacOS'
 
   s.platform = :osx, '10.11'
