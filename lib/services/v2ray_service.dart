@@ -233,9 +233,9 @@ class V2RayService {
     try {
       // Use a slightly longer timeout to prevent premature "stuck" declarations
       return await _runConnectLogic(server, customDns, proxyOnly, useSystemDns).timeout(
-        const Duration(seconds: 15),
+        const Duration(seconds: 45), // Increased timeout to allow for macOS admin prompt interaction
         onTimeout: () {
-          _logger.error('Connection logic timed out after 15 seconds');
+          _logger.error('Connection logic timed out after 45 seconds');
           // Don't throw - try to clean up and return false to keep UI alive
           _cleanupAfterError('Connection timed out');
           return false;
