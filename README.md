@@ -1,6 +1,10 @@
 # Flaming Cherubim
 
-A fast, modern, and high-performance V2Ray VPN client for Android, built with Flutter. Uses a custom native plugin to run the official V2Ray core directly.
+A fast, modern, and high-performance V2Ray VPN client built with Flutter.
+- **Android**: Full system VPN support.
+- **macOS**: High-performance Proxy support (SOCKS/HTTP).
+
+Uses a custom native plugin to run the official V2Ray core directly.
 
 ![Screenshot 1](screenshots/screenshot-1.png)
 ![Screenshot 2](screenshots/screenshot-2.png)
