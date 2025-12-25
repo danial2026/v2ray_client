@@ -669,10 +669,8 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
   }
   
   private func showAdminPasswordPrompt() -> String? {
-    // Must be run on main thread
-    var password: String?
-    
-    DispatchQueue.main.sync {
+    // Helper function to create and run the alert
+    func runAlert() -> String? {
         let alert = NSAlert()
         alert.messageText = "Setup Touch ID for V2Ray"
         alert.informativeText = "Enter your administrator password once to enable Touch ID for future connections. If you Cancel, you will be prompted by the system every time."
@@ -680,7 +678,7 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
         alert.addButton(withTitle: "Enable Touch ID")
         alert.addButton(withTitle: "Skip")
         
-        let input = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        let input = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
         alert.accessoryView = input
         
         // Try to focus
@@ -689,10 +687,18 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
         let response = alert.runModal()
         
         if response == .alertFirstButtonReturn {
-          password = input.stringValue
+          return input.stringValue
+        }
+        return nil
+    }
+
+    if Thread.isMainThread {
+        return runAlert()
+    } else {
+        return DispatchQueue.main.sync {
+            return runAlert()
         }
     }
-    return password
   }
   
   // MARK: - Helpers
