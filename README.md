@@ -29,7 +29,7 @@ VPN Mode provides full system VPN with traffic routing for all apps. Proxy-Only 
 ## Disclaimer
 
 > [!NOTE]
-> I coded this over the weekends, it might have bugs and it's not production-ready.
+> I coded this over the weekends, it might have bugs and it's not production-ready, and the macos version is fully vibe coded.
 
 ## Full Documentation
 
