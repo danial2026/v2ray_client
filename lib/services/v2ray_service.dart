@@ -181,26 +181,26 @@ class V2RayService {
   Future<void> fullSystemReset() async {
     _logger.warning('========== INITIATING FULL SYSTEM RESET ==========');
 
-    // 1. Force stop V2Ray
+    // Force stop V2Ray
     try {
       await _v2rayPlugin.stopV2Ray();
     } catch (e) {
       _logger.error('Reset: Failed to stop V2Ray (ignoring): $e');
     }
 
-    // 2. Clear internal state
+    // Clear internal state
     _status = VPNConnectionStatus.disconnected;
     _currentServer = null;
     _lastError = null;
     _statusController.add(_status);
 
-    // 3. Clear storage data (optional but recommended for full reset, but user asked for "reset vpn for device")
+    // Clear storage data (optional but recommended for full reset, but user asked for "reset vpn for device")
     // Let's just reset the VPN state for now, as clearing all data might be too aggressive unless explicitly asked.
     // However, the prompt says "reset vpn for device and also relaunch the app".
 
     _logger.warning('========== SYSTEM RESET COMPLETE ==========');
 
-    // 4. Force App Exit (User must manually relaunch)
+    // Force App Exit (User must manually relaunch)
     // Using exit(0) is drastic but requested.
     exit(0);
   }
@@ -362,16 +362,15 @@ class V2RayService {
       // Inject core settings that might be missing from the stub generator
       final Map<String, dynamic> fullConfig = json.decode(configJson);
 
-      // 1. Ensure log level is correct and enable file logs in private storage
+      // Ensure log level is correct and enable file logs in private storage
       fullConfig['log'] = {
         'loglevel': 'info',
         'access': _filesDir != null ? '$_filesDir/access.log' : 'none',
         'error': _filesDir != null ? '$_filesDir/error.log' : 'none',
       };
 
-      // 2. Ensure inbounds are correct for VPN mode
+      // Ensure inbounds are correct for VPN mode
       // Change tags to avoid conflict with 'proxy' outbound tag
-      // 2. Ensure inbounds are correct for VPN mode
       fullConfig['inbounds'] = [
         {
           "tag": "socks-in",
@@ -407,7 +406,7 @@ class V2RayService {
         outboundsList.add({'tag': 'dns-out', 'protocol': 'dns', 'settings': {}});
       }
 
-      // 3. DNS Configuration - Fetch system DNS dynamically
+      // DNS Configuration - Fetch system DNS dynamically
       _logger.info('Step 4/7: Fetching system DNS...');
       List<String> systemDnsServers = [];
       try {
@@ -417,7 +416,7 @@ class V2RayService {
         _logger.warning('Failed to fetch system DNS, will use fallback: $e');
       }
 
-      // 4. Resolve Server IP for bypass rule and outbound
+      // Resolve Server IP for bypass rule and outbound
       _logger.info('Step 5/7: Resolving server IP...');
       String resolvedIp = server.address;
       bool isIp = RegExp(r'^\d+\.\d+\.\d+\.\d+$').hasMatch(server.address);
@@ -445,12 +444,30 @@ class V2RayService {
         }
       }
 
+      // Prioritize Custom DNS if available
+      final List<String> effectiveDns = [];
+      if (customDns != null && customDns.isNotEmpty) {
+        effectiveDns.addAll(customDns.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty));
+        _logger.info('Using Custom DNS: $effectiveDns');
+      } 
+      
+      // If no custom DNS, or if we want to append system DNS as fallback (optional strategy)
+      // For privacy/leak protection, usually we prefer Custom DNS ONLY if specified.
+      if (effectiveDns.isEmpty) {
+        if (systemDnsServers.isNotEmpty) {
+           effectiveDns.addAll(systemDnsServers);
+        } else {
+           effectiveDns.addAll(["8.8.8.8", "1.1.1.1"]);
+        }
+        _logger.info('Using System/Default DNS: $effectiveDns');
+      }
+
       fullConfig['dns'] = {
-        "servers": [...systemDnsServers, "1.1.1.1", "8.8.8.8", "localhost"],
+        "servers": [...effectiveDns, "localhost"], // localhost is needed for internal routing sometimes
         "queryStrategy": "UseIP",
       };
 
-      // 5. Routing Strategy - Robust rules
+      // Routing Strategy - Robust rules
       fullConfig['routing'] = {
         "domainStrategy": "IPIfNonMatch",
         "rules": [

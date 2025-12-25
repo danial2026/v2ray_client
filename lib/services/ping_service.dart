@@ -44,7 +44,7 @@ class PingService {
 
       if (result.exitCode == 0) {
         final output = result.stdout as String;
-        // 1. Try generic output: "time=45.2 ms"
+        // Try generic output: "time=45.2 ms"
         var match = RegExp(r'time=([\d.]+)\s*ms').firstMatch(output);
         if (match != null) {
           final latency = double.parse(match.group(1)!).round();
@@ -52,7 +52,7 @@ class PingService {
           return PingResult.success(serverId: server.id, latencyMs: latency);
         }
 
-        // 2. Try summary line: "min/avg/max/stddev = 45.200/45.200/..."
+        // Try summary line: "min/avg/max/stddev = 45.200/45.200/..."
         match = RegExp(r'min/avg/max/stddev = [\d.]+/([\d.]+)/').firstMatch(output);
         if (match != null) {
           final latency = double.parse(match.group(1)!).round();

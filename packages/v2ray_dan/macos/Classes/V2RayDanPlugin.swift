@@ -410,37 +410,76 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
   }
   
   private func getPrimaryNetworkInterface() -> String? {
-    // Try to get the primary network interface (usually Wi-Fi or Ethernet)
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
-    process.arguments = ["-listnetworkserviceorder"]
+    // 1. Get the primary interface device (e.g., en0) using "route get default"
+    let routeProcess = Process()
+    routeProcess.executableURL = URL(fileURLWithPath: "/sbin/route")
+    routeProcess.arguments = ["-n", "get", "default"]
     
-    let pipe = Pipe()
-    process.standardOutput = pipe
-    process.standardError = FileHandle.nullDevice
+    let routePipe = Pipe()
+    routeProcess.standardOutput = routePipe
+    
+    var primaryDevice: String?
     
     do {
-      try process.run()
-      process.waitUntilExit()
+      try routeProcess.run()
+      routeProcess.waitUntilExit()
       
-      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      let data = routePipe.fileHandleForReading.readDataToEndOfFile()
       if let output = String(data: data, encoding: .utf8) {
-        // Parse output to find first active interface
         let lines = output.components(separatedBy: "\n")
         for line in lines {
-          // Look for lines like "(1) Wi-Fi" or "(1) Ethernet"
-          if line.contains("Wi-Fi") {
-            return "Wi-Fi"
-          } else if line.contains("Ethernet") {
-            return "Ethernet"
+          if line.contains("interface:") {
+            primaryDevice = line.replacingOccurrences(of: "interface:", with: "").trimmingCharacters(in: .whitespaces)
+            break
           }
         }
       }
     } catch {
-      log("Failed to get network interface: \(error)")
+      log("Failed to get default route: \(error)")
     }
     
-    // Default fallback
+    guard let device = primaryDevice else {
+      log("Could not find default route interface, falling back to heuristic")
+      // Start fallback heuristic
+      return "Wi-Fi" 
+    }
+    
+    log("Primary network device identified: \(device)")
+    
+    // 2. Map device (en0) to Service Name (Wi-Fi) using "networksetup -listallhardwareports"
+    let nsProcess = Process()
+    nsProcess.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
+    nsProcess.arguments = ["-listallhardwareports"]
+    
+    let nsPipe = Pipe()
+    nsProcess.standardOutput = nsPipe
+    
+    do {
+      try nsProcess.run()
+      nsProcess.waitUntilExit()
+      
+      let data = nsPipe.fileHandleForReading.readDataToEndOfFile()
+      if let output = String(data: data, encoding: .utf8) {
+        let lines = output.components(separatedBy: "\n")
+        var currentPortName: String?
+        
+        for line in lines {
+          if line.hasPrefix("Hardware Port:") {
+            currentPortName = line.replacingOccurrences(of: "Hardware Port:", with: "").trimmingCharacters(in: .whitespaces)
+          } else if line.contains("Device: \(device)") {
+            if let serviceName = currentPortName {
+              log("Mapped device \(device) to service: \(serviceName)")
+              return serviceName
+            }
+          }
+        }
+      }
+    } catch {
+      log("Failed to list hardware ports: \(error)")
+    }
+    
+    // 3. Fallback to simple check if mapping failed
+    log("Mapping failed, falling back to simple heuristic for Wi-Fi/Ethernet")
     return "Wi-Fi"
   }
   
