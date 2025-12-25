@@ -1,5 +1,5 @@
-name: v2ray
-description: "A high-performance, modern V2Ray VPN client for Android with support for VLESS, VMess, and Reality protocols."
+name: flaming_cherubim
+description: "Flaming Cherubim — A high-performance, modern V2Ray VPN client with support for VLESS, VMess, and Reality protocols."
 publish_to: 'none'
 
 version: 0.0.8

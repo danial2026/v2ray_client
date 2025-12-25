@@ -95,6 +95,6 @@ class _V2RayAppState extends State<V2RayApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(title: 'V2Ray VPN', theme: AppTheme.darkTheme, debugShowCheckedModeBanner: false, home: const HomeScreen());
+    return MaterialApp(title: 'Flaming Cherubim', theme: AppTheme.darkTheme, debugShowCheckedModeBanner: false, home: const HomeScreen());
   }
 }

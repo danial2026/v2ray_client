@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:v2ray/theme/app_theme.dart';
+import 'package:flaming_cherubim/theme/app_theme.dart';
 import '../models/v2ray_server.dart';
 import '../models/ping_result.dart';
 import '../services/v2ray_service.dart';
