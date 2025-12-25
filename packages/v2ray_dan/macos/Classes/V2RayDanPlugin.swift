@@ -91,9 +91,17 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
         let tempPath = NSTemporaryDirectory() + "v2ray_exec"
         do {
           if FileManager.default.fileExists(atPath: tempPath) {
-            try FileManager.default.removeItem(atPath: tempPath)
+            do {
+              try FileManager.default.removeItem(atPath: tempPath)
+            } catch {
+              log("⚠️ Could not remove existing binary (might be in use), attempting to reuse it: \(error)")
+            }
           }
-          try FileManager.default.copyItem(atPath: bundledPath, toPath: tempPath)
+          
+          // Only copy if file doesn't exist (successful remove or wasn't there)
+          if !FileManager.default.fileExists(atPath: tempPath) {
+             try FileManager.default.copyItem(atPath: bundledPath, toPath: tempPath)
+          }
           
           let chmod = Process()
           chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
@@ -102,10 +110,10 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
           chmod.waitUntilExit()
           
           v2rayBinaryPath = tempPath
-          log("✓ Created executable copy at: \(tempPath)")
+          log("✓ Using V2Ray executable at: \(tempPath)")
           return
         } catch {
-          log("Failed to make bundled binary executable: \(error)")
+          log("Failed to prepare V2Ray binary: \(error)")
         }
       }
     } else {
