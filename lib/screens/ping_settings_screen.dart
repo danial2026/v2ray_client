@@ -25,6 +25,8 @@ class _PingSettingsScreenState extends State<PingSettingsScreen> {
   late int _retryCount;
   late bool _useCustomDns;
   late bool _autoPingEnabled;
+  late bool _showUsageStats;
+  late bool _censorAddresses;
   PackageInfo _packageInfo = PackageInfo(
     appName: 'Unknown',
     packageName: 'Unknown',
@@ -55,6 +57,8 @@ class _PingSettingsScreenState extends State<PingSettingsScreen> {
     _retryCount = widget.currentSettings.retryCount;
     _useCustomDns = false; // logic inverted: useCustomDns means !useSystemDns
     _autoPingEnabled = true;
+    _showUsageStats = false;
+    _censorAddresses = false;
     _initializeData();
   }
 
@@ -67,6 +71,8 @@ class _PingSettingsScreenState extends State<PingSettingsScreen> {
       _dnsController.text = storage.loadCustomDns() ?? '';
       _useCustomDns = !systemDns;
       _autoPingEnabled = storage.loadAutoPingEnabled();
+      _showUsageStats = storage.loadShowUsageStats();
+      _censorAddresses = storage.loadCensorAddresses();
       _dnsPresets = presets.isEmpty ? _defaultPresets : presets;
     });
 
@@ -81,6 +87,8 @@ class _PingSettingsScreenState extends State<PingSettingsScreen> {
     await storage.saveCustomDns(_dnsController.text.trim());
     await storage.saveUseSystemDns(!_useCustomDns);
     await storage.saveAutoPingEnabled(_autoPingEnabled);
+    await storage.saveShowUsageStats(_showUsageStats);
+    await storage.saveCensorAddresses(_censorAddresses);
     await storage.saveDnsPresets(_dnsPresets);
 
     final settings = PingSettings(
@@ -174,7 +182,7 @@ class _PingSettingsScreenState extends State<PingSettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('PING ENGINE'),
+        title: const Text('SETTINGS'),
         actions: [
           TextButton(
             onPressed: _resetToDefaults,
@@ -244,7 +252,11 @@ class _PingSettingsScreenState extends State<PingSettingsScreen> {
             _buildSectionHeader('SYSTEM'),
             const SizedBox(height: 24),
             _buildAutoPingToggle(),
-
+            const SizedBox(height: 16),
+            _buildUsageStatsToggle(),
+            const SizedBox(height: 16),
+            _buildCensorToggle(),
+            
             const SizedBox(height: 48),
             SizedBox(
               width: double.infinity,
@@ -378,6 +390,68 @@ class _PingSettingsScreenState extends State<PingSettingsScreen> {
           Switch(
             value: _autoPingEnabled,
             onChanged: (value) => setState(() => _autoPingEnabled = value),
+            activeThumbColor: AppTheme.accentColor,
+            activeTrackColor: AppTheme.accentColor.withValues(alpha: 0.2),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUsageStatsToggle() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.data_usage_outlined, size: 18, color: Colors.white.withValues(alpha: 0.5)),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('USAGE STATS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                  Text('Show speed and memory usage in header', style: TextStyle(fontSize: 8, color: Colors.white.withValues(alpha: 0.3))),
+                ],
+              ),
+            ],
+          ),
+          Switch(
+            value: _showUsageStats,
+            onChanged: (value) => setState(() => _showUsageStats = value),
+            activeThumbColor: AppTheme.accentColor,
+            activeTrackColor: AppTheme.accentColor.withValues(alpha: 0.2),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCensorToggle() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.privacy_tip_outlined, size: 18, color: Colors.white.withValues(alpha: 0.5)),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('CENSOR ADDRESSES', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                  Text('Hide middle characters with asterisks', style: TextStyle(fontSize: 8, color: Colors.white.withValues(alpha: 0.3))),
+                ],
+              ),
+            ],
+          ),
+          Switch(
+            value: _censorAddresses,
+            onChanged: (value) => setState(() => _censorAddresses = value),
             activeThumbColor: AppTheme.accentColor,
             activeTrackColor: AppTheme.accentColor.withValues(alpha: 0.2),
           ),

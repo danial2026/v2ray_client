@@ -11,6 +11,7 @@ class ServerListItem extends StatelessWidget {
   final VoidCallback onLongPress;
   final VoidCallback onDelete;
   final VoidCallback? onShare;
+  final bool censorAddress;
 
   const ServerListItem({
     super.key,
@@ -21,6 +22,7 @@ class ServerListItem extends StatelessWidget {
     required this.onLongPress,
     required this.onDelete,
     this.onShare,
+    this.censorAddress = false,
   });
 
   @override
@@ -63,7 +65,9 @@ class ServerListItem extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${server.protocol.toUpperCase()} • ${server.address}',
+                      censorAddress 
+                          ? '${server.protocol.toUpperCase()} • ${_censorString(server.address)}'
+                          : '${server.protocol.toUpperCase()} • ${server.address}',
                       style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.5), fontFamily: 'monospace'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -126,5 +130,10 @@ class ServerListItem extends StatelessWidget {
         style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w600),
       ),
     );
+  }
+
+  String _censorString(String input) {
+    if (input.length <= 8) return input;
+    return '${input.substring(0, 4)}***${input.substring(input.length - 4)}';
   }
 }

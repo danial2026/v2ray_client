@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="140dp"
-    android:minHeight="70dp"
+    android:minWidth="100dp"
+    android:minHeight="100dp"
     android:updatePeriodMillis="1800000"
-    android:previewImage="@drawable/widget_background"
-    android:previewLayout="@layout/widget_connect"
-    android:initialLayout="@layout/widget_connect"
+    android:previewImage="@drawable/widget_background_circle"
+    android:previewLayout="@layout/widget_circle"
+    android:initialLayout="@layout/widget_circle"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen">
 </appwidget-provider>

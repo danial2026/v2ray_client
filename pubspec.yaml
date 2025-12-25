@@ -2,7 +2,7 @@ name: v2ray
 description: "A high-performance, modern V2Ray VPN client for Android with support for VLESS, VMess, and Reality protocols."
 publish_to: 'none'
 
-version: 0.0.7
+version: 0.0.8
 
 environment:
   sdk: ^3.10.0

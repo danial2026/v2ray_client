@@ -8,15 +8,23 @@ import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import android.net.TrafficStats
+import android.os.Process
 
 class MainActivity : FlutterActivity() {
     private val TAG = "MainActivity"
     private val VPN_PERMISSION_CHANNEL = "com.v2ray.v2ray/vpn_permission"
     private val LOG_CHANNEL = "com.v2ray.v2ray/logs"
+
+    private val STATS_CHANNEL = "com.v2ray.v2ray/stats"
+    private val WIDGET_CHANNEL = "com.v2ray.v2ray/widget"
     private val VPN_REQUEST_CODE = 1001
     
     private var vpnMethodChannel: MethodChannel? = null
     private var logChannel: MethodChannel? = null
+
+    private var statsChannel: MethodChannel? = null
+    private var widgetChannel: MethodChannel? = null
     private var pendingResult: MethodChannel.Result? = null
     
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -49,9 +57,62 @@ class MainActivity : FlutterActivity() {
             LOG_CHANNEL
         )
         
+        // Setup stats channel
+        statsChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            STATS_CHANNEL
+        )
+        
+        statsChannel?.setMethodCallHandler { call, result ->
+            if (call.method == "getUsageStats") {
+                val uid = Process.myUid()
+                val rx = TrafficStats.getUidRxBytes(uid)
+                val tx = TrafficStats.getUidTxBytes(uid)
+                
+                val runtime = Runtime.getRuntime()
+                val usedMemInBytes = runtime.totalMemory() - runtime.freeMemory()
+                val usedMemInMB = usedMemInBytes.toDouble() / (1024 * 1024)
+                
+                result.success(mapOf(
+                    "upload" to (if (tx == TrafficStats.UNSUPPORTED.toLong()) 0L else tx),
+                    "download" to (if (rx == TrafficStats.UNSUPPORTED.toLong()) 0L else rx),
+                    "memory" to usedMemInMB
+                ))
+            } else {
+                result.notImplemented()
+            }
+        }
+        
+        // Setup widget channel
+        widgetChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            WIDGET_CHANNEL
+        )
+        
+        widgetChannel?.setMethodCallHandler { call, result ->
+            val isConnected = call.argument<Boolean>("is_connected") ?: false
+            
+            if (call.method == "updateWidgetState") {
+                val intent = Intent(ConnectWidgetProvider.ACTION_UPDATE_WIDGET_STATE)
+                intent.setPackage(packageName)
+                intent.putExtra("is_connected", isConnected)
+                sendBroadcast(intent)
+                result.success(null)
+            } else if (call.method == "updateCircleWidgetState") {
+                val intent = Intent(CircleWidgetProvider.ACTION_UPDATE_WIDGET_STATE)
+                intent.setPackage(packageName)
+                intent.putExtra("is_connected", isConnected)
+                sendBroadcast(intent)
+                result.success(null)
+            } else {
+                result.notImplemented()
+            }
+        }
+        
         sendLog("INFO", "✓ Flutter engine configured successfully")
         sendLog("INFO", "✓ VPN permission channel: $VPN_PERMISSION_CHANNEL")
         sendLog("INFO", "✓ Logging bridge channel: $LOG_CHANNEL")
+        sendLog("INFO", "✓ Stats channel: $STATS_CHANNEL")
         sendLog("INFO", "Android version: ${Build.VERSION.SDK_INT} (${Build.VERSION.RELEASE})")
         sendLog("INFO", "Device: ${Build.MANUFACTURER} ${Build.MODEL}")
     }
@@ -141,8 +202,13 @@ class MainActivity : FlutterActivity() {
         super.onDestroy()
         vpnMethodChannel?.setMethodCallHandler(null)
         logChannel?.setMethodCallHandler(null)
+
+        statsChannel?.setMethodCallHandler(null)
+        widgetChannel?.setMethodCallHandler(null)
         vpnMethodChannel = null
         logChannel = null
+        statsChannel = null
+        widgetChannel = null
         pendingResult = null
         sendLog("INFO", "MainActivity destroyed")
     }

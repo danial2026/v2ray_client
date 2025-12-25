@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.8] - 2025-12-25
+### Added
+- **Circle Home Screen Widget**: New circular widget variant with connection status.
+- **Usage Statistics**: Real-time upload, download, and memory usage monitoring in the AppBar (toggleable in Settings).
+- **IP & Country Flag**: Display current connected IP address and country flag in the AppBar.
+- **macOS Support**: Initial platform configuration for macOS.
+- **Privacy Censoring**: Option to censor server addresses in the list for privacy (hides middle characters).
+- **WebView Improvements**: Added URL history, navigation controls, and basic download handling.
+
+### Changed
+- Improved Settings screen organization (formerly Ping Engine).
+- Enhanced AppBar layout to accommodate new status indicators.
+
+
 ## [0.0.7] - 2025-12-20
 ### Added
 - Android home screen widget for quick VPN connect/disconnect control.

@@ -15,6 +15,9 @@ class StorageService {
   static const String _useSystemDnsKey = 'use_system_dns';
   static const String _dnsPresetsKey = 'dns_presets';
   static const String _autoPingEnabledKey = 'auto_ping_enabled';
+  static const String _showUsageStatsKey = 'show_usage_stats';
+  static const String _censorAddressesKey = 'censor_addresses';
+  static const String _urlHistoryKey = 'url_history';
 
   final SharedPreferences _prefs;
 
@@ -152,6 +155,33 @@ class StorageService {
 
   bool loadAutoPingEnabled() {
     return _prefs.getBool(_autoPingEnabledKey) ?? false;
+  }
+
+  // Usage Stats settings
+  Future<void> saveShowUsageStats(bool show) async {
+    await _prefs.setBool(_showUsageStatsKey, show);
+  }
+
+  bool loadShowUsageStats() {
+    return _prefs.getBool(_showUsageStatsKey) ?? false;
+  }
+
+  // Censoring settings
+  Future<void> saveCensorAddresses(bool censor) async {
+    await _prefs.setBool(_censorAddressesKey, censor);
+  }
+
+  bool loadCensorAddresses() {
+    return _prefs.getBool(_censorAddressesKey) ?? false;
+  }
+
+  // URL History
+  Future<void> saveUrlHistory(List<String> history) async {
+    await _prefs.setStringList(_urlHistoryKey, history);
+  }
+
+  List<String> loadUrlHistory() {
+    return _prefs.getStringList(_urlHistoryKey) ?? [];
   }
 
   // Clear all data

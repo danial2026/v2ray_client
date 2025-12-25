@@ -7,6 +7,8 @@ import '../models/ping_result.dart';
 import '../services/v2ray_service.dart';
 import '../services/storage_service.dart';
 import '../services/ping_service.dart';
+import '../services/usage_stats_service.dart';
+import '../services/ip_info_service.dart';
 import '../models/ping_settings.dart';
 import '../widgets/server_list_item.dart';
 import '../widgets/connection_toggle.dart';
@@ -26,6 +28,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final V2RayService _v2rayService = V2RayService();
   final PingService _pingService = PingService();
+  final UsageStatsService _usageStatsService = UsageStatsService();
+  final IpInfoService _ipInfoService = IpInfoService();
   late StorageService _storageService;
 
   List<V2RayServer> _servers = [];
@@ -38,7 +42,12 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _customDns;
   bool _proxyOnly = false;
   bool _useSystemDns = true;
+  bool _showUsageStats = false;
+  bool _censorAddresses = false;
+  IpInfo? _ipInfo;
+  UsageStats _currentStats = UsageStats(uploadBytes: 0, downloadBytes: 0, memoryMB: 0);
   StreamSubscription<VPNConnectionStatus>? _statusSubscription;
+  StreamSubscription<UsageStats>? _statsSubscription;
 
   @override
   void initState() {
@@ -60,10 +69,51 @@ class _HomeScreenState extends State<HomeScreen> {
             _pingAllServers();
           }
         }
+
+        // Update both widgets on status change
+        _updateWidgets(status == VPNConnectionStatus.connected);
+        
+        // Start/stop usage monitoring based on connection
+        if (status == VPNConnectionStatus.connected && _showUsageStats) {
+          _usageStatsService.startMonitoring();
+        } else if (status == VPNConnectionStatus.disconnected) {
+          _usageStatsService.stopMonitoring();
+          setState(() => _ipInfo = null);
+        }
+
+        // Fetch IP on connect
+        if (status == VPNConnectionStatus.connected) {
+          Future.delayed(const Duration(seconds: 2), () async {
+            final info = await _ipInfoService.fetchIpInfo();
+            if (mounted && info != null) {
+              setState(() => _ipInfo = info);
+            }
+          });
+        }
+      }
+    });
+    
+    // Listen to usage stats
+    _statsSubscription = _usageStatsService.statsStream.listen((stats) {
+      if (mounted) {
+        setState(() {
+          _currentStats = stats;
+        });
       }
     });
 
     _loadData();
+  }
+
+  // Update both rectangular and circle widgets
+  Future<void> _updateWidgets(bool isConnected) async {
+    const platform = MethodChannel('com.v2ray.v2ray/widget');
+    try {
+      await platform.invokeMethod('updateWidgetState', {'is_connected': isConnected});
+      await platform.invokeMethod('updateCircleWidgetState', {'is_connected': isConnected});
+    } catch (e) {
+      // Widget update failed, but don't interrupt flow
+    }
   }
 
   void _loadData() {
@@ -76,6 +126,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _customDns = _storageService.loadCustomDns();
       _proxyOnly = _storageService.loadProxyOnly();
       _useSystemDns = _storageService.loadUseSystemDns();
+      _showUsageStats = _storageService.loadShowUsageStats();
+      _censorAddresses = _storageService.loadCensorAddresses();
     });
   }
 
@@ -360,17 +412,57 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
                   const SizedBox(width: 8),
                 ],
-                Text(
-                  _getConnectionStatusText(),
-                  style: TextStyle(
-                    fontSize: 10,
-                    letterSpacing: 1.2,
-                    fontWeight: FontWeight.w600,
-                    color: _v2rayService.status == VPNConnectionStatus.connected
-                        ? AppTheme.successColor
-                        : Colors.white.withValues(alpha: 0.5),
+                if (_v2rayService.status == VPNConnectionStatus.connected) ...[
+                  // IP & Flag
+                  if (_ipInfo != null) ...[
+                      Text(
+                        '${_ipInfo!.flagEmoji} ${_censorAddresses ? _censorString(_ipInfo!.ip) : _ipInfo!.ip}',
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, fontFamily: 'monospace'),
+                      ),
+                    const SizedBox(width: 12),
+                    Container(width: 1, height: 10, color: Colors.white.withValues(alpha: 0.2)),
+                    const SizedBox(width: 12),
+                  ],
+
+                  // Usage Stats or Mode
+                  if (_showUsageStats)
+                    Row(
+                      children: [
+                        Icon(Icons.arrow_upward, size: 10, color: Colors.white.withValues(alpha: 0.5)),
+                        const SizedBox(width: 4),
+                        Text(
+                          _currentStats.uploadFormatted,
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(Icons.arrow_downward, size: 10, color: Colors.white.withValues(alpha: 0.5)),
+                        const SizedBox(width: 4),
+                        Text(
+                          _currentStats.downloadFormatted,
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+                        ),
+                      ],
+                    )
+                  else
+                    Text(
+                      _proxyOnly ? 'PROXY LOCALHOST:10808' : 'SYSTEM TUNNEL',
+                      style: TextStyle(
+                        fontSize: 10,
+                        letterSpacing: 1,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.successColor.withValues(alpha: 0.8),
+                      ),
+                    ),
+                ] else
+                  Text(
+                    _getConnectionStatusText(),
+                    style: TextStyle(
+                      fontSize: 10,
+                      letterSpacing: 1.2,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.5),
+                    ),
                   ),
-                ),
               ],
             ),
           ],
@@ -451,6 +543,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onTap: () => _selectServer(server.id),
           onLongPress: () => _showServerActions(server),
           onDelete: () => _deleteServer(server.id),
+          censorAddress: _censorAddresses,
         );
       },
     );
@@ -498,9 +591,16 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  String _censorString(String input) {
+    if (input.length <= 8) return input;
+    return '${input.substring(0, 4)}***${input.substring(input.length - 4)}';
+  }
+
   @override
   void dispose() {
     _statusSubscription?.cancel();
+    _statsSubscription?.cancel();
+    _usageStatsService.dispose();
     _v2rayService.dispose();
     super.dispose();
   }
