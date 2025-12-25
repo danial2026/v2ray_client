@@ -37,10 +37,11 @@ class PingService {
     try {
       // Use system ping command
       // -c 1: one packet
-      // -W 3000: 3000ms on macOS, 3000s on Linux. 
-      // We rely on Dart's .timeout() to enforce the actual ~3s limit cross-platform.
-      _logger.debug('Using system ping for ${server.name} at $address');
-      final result = await Process.run('ping', ['-c', '1', '-W', '3000', address]).timeout(const Duration(seconds: 3));
+      // -W: timeout (macOS uses ms, Linux/Android uses s)
+      final timeoutArg = Platform.isMacOS ? '3000' : '3';
+      
+      _logger.debug('Using system ping for ${server.name} at $address (timeout: $timeoutArg)');
+      final result = await Process.run('ping', ['-c', '1', '-W', timeoutArg, address]).timeout(const Duration(seconds: 4));
 
       if (result.exitCode == 0) {
         final output = result.stdout as String;
