@@ -210,6 +210,13 @@ class V2RayService {
     _logger.info('Server: ${server.name} (${server.address}:${server.port})');
     _logger.info('Protocol: ${server.protocol}');
 
+    // Platform validation
+    if (!Platform.isAndroid && !Platform.isMacOS) {
+      _logger.error('Unsupported platform: ${Platform.operatingSystem}');
+      _cleanupAfterError('Flaming Cherubim currently only supports VPN connections on Android and macOS.');
+      return false;
+    }
+
     try {
       // Use a slightly longer timeout to prevent premature "stuck" declarations
       return await _runConnectLogic(server, customDns, proxyOnly, useSystemDns).timeout(
