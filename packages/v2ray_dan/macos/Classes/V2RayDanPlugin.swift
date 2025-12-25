@@ -1,6 +1,8 @@
 import Cocoa
 import FlutterMacOS
 import Foundation
+import LocalAuthentication
+import Security
 
 public class V2RayDanPlugin: NSObject, FlutterPlugin {
   private var eventSink: FlutterEventSink?
@@ -562,12 +564,47 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
   private func executeBatch(_ commands: [String]) -> Bool {
     guard !commands.isEmpty else { return true }
     
-    // Combine commands with "&&" so we stop if any command fails
     let fullScript = commands.joined(separator: " && ")
     
-    // Escaping for AppleScript:
-    // double quote " becomes \" in the shell string
-    // backslash \ becomes \\
+    // 1. Try with stored password and Touch ID first
+    if let password = KeychainHelper.getAdminPassword() {
+      // Only verify biometric if available
+      if BiometricHelper.isBiometricAvailable() {
+        if BiometricHelper.authenticateUser(reason: "Authenticate to configure VPN settings") {
+          log("Touch ID success, attempting to execute with stored password")
+          if executeWithSudo(fullScript, password: password) {
+            log("✓ Command executed via sudo with Touch ID auth")
+            return true
+          } else {
+            log("⚠️ Stored password failed with sudo, removing invalid password")
+            KeychainHelper.deleteAdminPassword()
+          }
+        } else {
+          log("Touch ID authentication failed or cancelled, falling back to system dialog")
+        }
+      }
+    }
+    
+    // 2. If no valid password or Touch ID failed, try to capture password if user wants?
+    // We will only prompt ONE time per session to capture password if biometric is available
+    // and verify it working.
+    
+    if BiometricHelper.isBiometricAvailable() && KeychainHelper.getAdminPassword() == nil {
+        log("No stored password. Prompting user to enable Touch ID...")
+        if let password = showAdminPasswordPrompt() {
+          if executeWithSudo(fullScript, password: password) {
+            log("✓ Command executed via sudo with entered password")
+            KeychainHelper.saveAdminPassword(password)
+            return true
+          } else {
+             log("✗ Entered password invalid for sudo")
+          }
+        } else {
+           log("User cancelled custom prompt, falling back to osascript")
+        }
+    }
+
+    // 3. Fallback to standard osascript
     let escapedScript = fullScript.replacingOccurrences(of: "\\", with: "\\\\")
                                   .replacingOccurrences(of: "\"", with: "\\\"")
     
@@ -577,7 +614,6 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
     process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
     process.arguments = ["-e", appleScriptSource]
     
-    // Pipes to capture error if needed
     let outputPipe = Pipe()
     let errorPipe = Pipe()
     process.standardOutput = outputPipe
@@ -590,7 +626,6 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
       if process.terminationStatus == 0 {
         return true
       } else {
-        // Read error for logging
         let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
         if let errorMsg = String(data: errorData, encoding: .utf8) {
           log("OsaScript failed: \(errorMsg.trimmingCharacters(in: .whitespacesAndNewlines))")
@@ -600,6 +635,133 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
     } catch {
       log("Failed to execute osascript: \(error)")
       return false
+    }
+  }
+
+  private func executeWithSudo(_ command: String, password: String) -> Bool {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/sh")
+    // Use sudo -S -k to force reading from stdin and ignore cached credentials
+    process.arguments = ["-c", "sudo -S -k -p '' \(command)"]
+    
+    let inputPipe = Pipe()
+    let outputPipe = Pipe()
+    
+    process.standardInput = inputPipe
+    process.standardOutput = outputPipe
+    process.standardError = outputPipe
+    
+    do {
+      try process.run()
+      
+      if let data = (password + "\n").data(using: .utf8) {
+        inputPipe.fileHandleForWriting.write(data)
+        // Close stdin to signal EOF
+        try? inputPipe.fileHandleForWriting.closeFile()
+      }
+      
+      process.waitUntilExit()
+      return process.terminationStatus == 0
+    } catch {
+      log("Sudo execution error: \(error)")
+      return false
+    }
+  }
+  
+  private func showAdminPasswordPrompt() -> String? {
+    // Must be run on main thread
+    var password: String?
+    
+    DispatchQueue.main.sync {
+        let alert = NSAlert()
+        alert.messageText = "Setup Touch ID for V2Ray"
+        alert.informativeText = "Enter your administrator password once to enable Touch ID for future connections. If you Cancel, you will be prompted by the system every time."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Enable Touch ID")
+        alert.addButton(withTitle: "Skip")
+        
+        let input = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        alert.accessoryView = input
+        
+        // Try to focus
+        alert.window.initialFirstResponder = input
+        
+        let response = alert.runModal()
+        
+        if response == .alertFirstButtonReturn {
+          password = input.stringValue
+        }
+    }
+    return password
+  }
+  
+  // MARK: - Helpers
+
+  private struct BiometricHelper {
+    static func isBiometricAvailable() -> Bool {
+      let context = LAContext()
+      var error: NSError?
+      return context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+    }
+    
+    static func authenticateUser(reason: String) -> Bool {
+      let context = LAContext()
+      var authorized = false
+      let semaphore = DispatchSemaphore(value: 0)
+      
+      context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, authenticationError in
+        authorized = success
+        semaphore.signal()
+      }
+      
+      _ = semaphore.wait(timeout: .now() + 60)
+      return authorized
+    }
+  }
+  
+  private struct KeychainHelper {
+    static let service = "com.flaming.cherubim.admin" 
+    static let account = "root"
+    
+    static func saveAdminPassword(_ password: String) {
+      guard let data = password.data(using: .utf8) else { return }
+      
+      let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+        kSecValueData as String: data
+      ]
+      
+      SecItemDelete(query as CFDictionary)
+      SecItemAdd(query as CFDictionary, nil)
+    }
+    
+    static func getAdminPassword() -> String? {
+      let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+        kSecReturnData as String: true,
+        kSecMatchLimit as String: kSecMatchLimitOne
+      ]
+      
+      var dataTypeRef: AnyObject?
+      let status: OSStatus = SecItemCopyMatching(query as CFDictionary, &dataTypeRef)
+      
+      if status == errSecSuccess, let data = dataTypeRef as? Data {
+        return String(data: data, encoding: .utf8)
+      }
+      return nil
+    }
+    
+    static func deleteAdminPassword() {
+      let query: [String: Any] = [
+         kSecClass as String: kSecClassGenericPassword,
+         kSecAttrService as String: service,
+         kSecAttrAccount as String: account
+      ]
+      SecItemDelete(query as CFDictionary)
     }
   }
   
