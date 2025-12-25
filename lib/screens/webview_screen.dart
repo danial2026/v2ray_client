@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -32,8 +33,14 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _loadHistory();
 
     _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.black)
+      ..setJavaScriptMode(JavaScriptMode.unrestricted);
+    
+    // setBackgroundColor is not fully supported on macOS WebView
+    if (!Platform.isMacOS) {
+      _controller.setBackgroundColor(Colors.black);
+    }
+    
+    _controller
       ..setNavigationDelegate(
         NavigationDelegate(
           onNavigationRequest: (NavigationRequest request) {

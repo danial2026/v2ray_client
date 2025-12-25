@@ -83,6 +83,24 @@ class V2ray {
     return dns?.cast<String>() ?? [];
   }
 
+  Future<bool> setSystemProxy() async {
+    try {
+      final bool? result = await _channel.invokeMethod('setSystemProxy');
+      return result ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> clearSystemProxy() async {
+    try {
+      final bool? result = await _channel.invokeMethod('clearSystemProxy');
+      return result ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
   static V2RayURL parseFromURL(String url) {
     return V2RayURL(url);
   }

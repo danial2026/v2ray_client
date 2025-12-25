@@ -217,15 +217,6 @@ class V2RayService {
       return false;
     }
 
-    // macOS: Force proxy-only mode since full VPN requires Network Extension setup
-    if (Platform.isMacOS && !proxyOnly) {
-      _logger.warning('========== macOS VPN Mode Not Available ==========');
-      _logger.warning('Full VPN mode on macOS requires Network Extension setup.');
-      _logger.warning('Switching to Proxy-Only mode automatically.');
-      _logger.warning('Configure apps to use SOCKS5: 127.0.0.1:10808 or HTTP: 127.0.0.1:10809');
-      _logger.warning('==================================================');
-      proxyOnly = true;
-    }
 
     try {
       // Use a slightly longer timeout to prevent premature "stuck" declarations
@@ -567,6 +558,12 @@ class V2RayService {
       _logger.info('  - HTTP: 127.0.0.1:10809');
     }
 
+    // On macOS, automatically enable system proxy for system-wide behavior
+    if (Platform.isMacOS) {
+      _logger.info('Enabling macOS system proxy for system-wide VPN behavior...');
+      await setSystemProxy();
+    }
+
     // POST-CONNECTION DIAGNOSTICS
     _logger.info('========== Post-Connection Diagnostics ==========');
     await _runPostConnectionDiagnostics();
@@ -608,6 +605,11 @@ class V2RayService {
         // Continue to cleanup state even if stop failed
       }
 
+      // On macOS, clear system proxy
+      if (Platform.isMacOS) {
+        await clearSystemProxy();
+      }
+
       // Increased delay to allow network stack to fully reset
       await Future.delayed(const Duration(milliseconds: 800));
 
@@ -646,6 +648,48 @@ class V2RayService {
       return await _v2rayPlugin.getServerDelay(config: configJson, url: 'https://www.google.com/generate_204');
     } catch (e) {
       return null;
+    }
+  }
+
+  // macOS System Proxy Control
+  Future<bool> setSystemProxy() async {
+    if (!Platform.isMacOS) {
+      _logger.warning('System proxy control is only available on macOS');
+      return false;
+    }
+
+    try {
+      _logger.info('Enabling macOS system proxy...');
+      final result = await _v2rayPlugin.setSystemProxy();
+      if (result) {
+        _logger.info('✓ System proxy enabled successfully');
+      } else {
+        _logger.warning('Failed to enable system proxy (may need admin permissions)');
+      }
+      return result;
+    } catch (e) {
+      _logger.error('Error enabling system proxy: $e');
+      return false;
+    }
+  }
+
+  Future<bool> clearSystemProxy() async {
+    if (!Platform.isMacOS) {
+      return false;
+    }
+
+    try {
+      _logger.info('Disabling macOS system proxy...');
+      final result = await _v2rayPlugin.clearSystemProxy();
+      if (result) {
+        _logger.info('✓ System proxy disabled successfully');
+      } else {
+        _logger.warning('Failed to disable system proxy');
+      }
+      return result;
+    } catch (e) {
+      _logger.error('Error disabling system proxy: $e');
+      return false;
     }
   }
 
