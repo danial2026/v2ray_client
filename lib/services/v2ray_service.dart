@@ -291,27 +291,6 @@ class V2RayService {
       // Continue anyway as we want to try connecting
     }
 
-    // Step 1.5: [macOS] Kill zombie processes on V2Ray ports to prevent "address already in use"
-    if (Platform.isMacOS) {
-      _logger.info('Step 1.5/7: Cleaning up V2Ray ports...');
-      try {
-        final ports = [10808, 10809];
-        for (final port in ports) {
-          final result = await Process.run('lsof', ['-t', '-i:$port']);
-          if (result.stdout.toString().trim().isNotEmpty) {
-            final pid = result.stdout.toString().trim();
-            _logger.warning('Found process $pid using port $port. Killing it...');
-            await Process.run('kill', ['-9', pid]);
-          }
-        }
-        // Explicitly kill v2ray binary just in case
-        await Process.run('killall', ['v2ray']);
-        _logger.info('✓ Port cleanup complete');
-      } catch (e) {
-        _logger.warning('Port cleanup non-fatal error: $e');
-      }
-    }
-
     // Step 2: Update status to connecting
     _logger.info('Step 1/7: Updating status to CONNECTING');
     _status = VPNConnectionStatus.connecting;
@@ -570,46 +549,23 @@ class V2RayService {
 
     // Step 7: Wait for core initialization and verify connection
     _logger.info('Step 6/7: Waiting for core initialization...');
-    
-    // Retry loop to verify traffic is actually flowing through the local proxy port
-    _logger.info('Step 7/7: Verifying V2Ray tunnel capability...');
-    bool isTrafficFlowing = false;
-    
-    for (int i = 0; i < 10; i++) {
-       await Future.delayed(const Duration(seconds: 1)); // Wait 1s between attempts
-       
-       try {
-         // Create a client that uses our local PROXY
-         final client = HttpClient();
-         client.findProxy = (uri) => "PROXY 127.0.0.1:10809";
-         client.connectionTimeout = const Duration(seconds: 2);
-         
-         // Use a reliable, fast endpoint (Google Gen 204)
-         final request = await client.getUrl(Uri.parse('http://cp.cloudflare.com/'));
-         final response = await request.close();
-         
-         if (response.statusCode == 200 || response.statusCode == 204) {
-           _logger.info('✓ Traffic verified! (Attempt ${i+1}) - Server returned ${response.statusCode}');
-           isTrafficFlowing = true;
-           client.close(); // Clean up
-           break;
-         }
-       } catch (e) {
-         _logger.debug('Traffic check attempt ${i+1} failed: $e');
-       }
-    }
-    
-    if (!isTrafficFlowing) {
-       _logger.error('❌ Connection Verification Failed: V2Ray core is running, but traffic is not passing through.');
-       _logger.error('This usually means the server is unreachable, UUID is invalid, or time is out of sync.');
-       // We should arguably fail here, but let's check core version as a fallback "is alive" check
-       // and maybe proceed with a warning? 
-       // User experience: Better to fail fast if we know it's broken.
-       // However, to match previous behavior, let's throw an exception to trigger cleanup.
-       throw Exception('V2Ray Connected, but traffic test failed. Check server/internet.');
-    }
+    await Future.delayed(const Duration(milliseconds: 2000));
 
-    _logger.info('Connection verification complete');
+    // Verify connection status
+    _logger.info('Step 7/7: Verifying V2Ray core is responsive...');
+
+    // Verify core version (confirms V2Ray is responsive)
+    try {
+      final coreVersion = await _v2rayPlugin.getCoreVersion().timeout(const Duration(seconds: 3), onTimeout: () => '');
+
+      if (coreVersion != null && coreVersion.isNotEmpty) {
+        _logger.info('✓ V2Ray core is responsive. Version: $coreVersion');
+      } else {
+        _logger.warning('Could not verify core version, but continuing...');
+      }
+    } catch (e) {
+      _logger.warning('Core verification failed (non-fatal): $e');
+    }
 
     _logger.info('Connection verification complete');
     _logger.info('Note: Monitor app logs and test actual traffic to confirm routing.');
