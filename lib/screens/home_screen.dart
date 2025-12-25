@@ -107,7 +107,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Update both rectangular and circle widgets
   Future<void> _updateWidgets(bool isConnected) async {
-    const platform = MethodChannel('com.v2ray.v2ray/widget');
+    const platform = MethodChannel('com.flaming.cherubim/widget');
     try {
       await platform.invokeMethod('updateWidgetState', {'is_connected': isConnected});
       await platform.invokeMethod('updateCircleWidgetState', {'is_connected': isConnected});

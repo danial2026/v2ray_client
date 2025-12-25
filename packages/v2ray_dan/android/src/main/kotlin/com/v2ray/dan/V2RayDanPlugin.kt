@@ -32,7 +32,7 @@ class V2RayDanPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, PluginReg
     channel.setMethodCallHandler(this)
     
     // Log channel
-    logChannel = MethodChannel(flutterPluginBinding.binaryMessenger, "com.v2ray.v2ray/logs")
+    logChannel = MethodChannel(flutterPluginBinding.binaryMessenger, "com.flaming.cherubim/logs")
     
     // Register BroadcastReceiver for logs and status
     val filter = android.content.IntentFilter()

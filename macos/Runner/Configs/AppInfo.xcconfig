@@ -8,7 +8,7 @@
 PRODUCT_NAME = Flaming Cherubim
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.v2ray.v2ray
+PRODUCT_BUNDLE_IDENTIFIER = com.flaming.cherubim
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2025 com.v2ray. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2025 Flaming Cherubim. All rights reserved.

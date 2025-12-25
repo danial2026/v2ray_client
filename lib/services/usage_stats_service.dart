@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 class UsageStatsService {
-  static const platform = MethodChannel('com.v2ray.v2ray/stats');
+  static const platform = MethodChannel('com.flaming.cherubim/stats');
   
   final StreamController<UsageStats> _statsController = StreamController<UsageStats>.broadcast();
   Timer? _updateTimer;

@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    package="com.v2ray.v2ray">
+    package="com.flaming.cherubim">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
@@ -21,7 +21,7 @@
         android:extractNativeLibs="true">
         
         <activity
-            android:name="com.v2ray.v2ray.MainActivity"
+            android:name="com.flaming.cherubim.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/LaunchTheme"
@@ -68,13 +68,13 @@
         </service>
 
         <receiver
-            android:name="com.v2ray.v2ray.ConnectWidgetProvider"
+            android:name="com.flaming.cherubim.ConnectWidgetProvider"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.v2ray.v2ray.action.WIDGET_CONNECT" />
-                <action android:name="com.v2ray.v2ray.action.WIDGET_DISCONNECT" />
-                <action android:name="com.v2ray.v2ray.action.UPDATE_WIDGET_STATE" />
+                <action android:name="com.flaming.cherubim.action.WIDGET_CONNECT" />
+                <action android:name="com.flaming.cherubim.action.WIDGET_DISCONNECT" />
+                <action android:name="com.flaming.cherubim.action.UPDATE_WIDGET_STATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
@@ -82,13 +82,13 @@
         </receiver>
 
         <receiver
-            android:name="com.v2ray.v2ray.CircleWidgetProvider"
+            android:name="com.flaming.cherubim.CircleWidgetProvider"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.v2ray.v2ray.action.CIRCLE_WIDGET_CONNECT" />
-                <action android:name="com.v2ray.v2ray.action.CIRCLE_WIDGET_DISCONNECT" />
-                <action android:name="com.v2ray.v2ray.action.UPDATE_WIDGET_STATE" />
+                <action android:name="com.flaming.cherubim.action.CIRCLE_WIDGET_CONNECT" />
+                <action android:name="com.flaming.cherubim.action.CIRCLE_WIDGET_DISCONNECT" />
+                <action android:name="com.flaming.cherubim.action.UPDATE_WIDGET_STATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

@@ -1,4 +1,4 @@
-package com.v2ray.v2ray
+package com.flaming.cherubim
 
 import android.app.Activity
 import android.content.Intent
@@ -13,11 +13,11 @@ import android.os.Process
 
 class MainActivity : FlutterActivity() {
     private val TAG = "MainActivity"
-    private val VPN_PERMISSION_CHANNEL = "com.v2ray.v2ray/vpn_permission"
-    private val LOG_CHANNEL = "com.v2ray.v2ray/logs"
+    private val VPN_PERMISSION_CHANNEL = "com.flaming.cherubim/vpn_permission"
+    private val LOG_CHANNEL = "com.flaming.cherubim/logs"
 
-    private val STATS_CHANNEL = "com.v2ray.v2ray/stats"
-    private val WIDGET_CHANNEL = "com.v2ray.v2ray/widget"
+    private val STATS_CHANNEL = "com.flaming.cherubim/stats"
+    private val WIDGET_CHANNEL = "com.flaming.cherubim/widget"
     private val VPN_REQUEST_CODE = 1001
     
     private var vpnMethodChannel: MethodChannel? = null

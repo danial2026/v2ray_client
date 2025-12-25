@@ -53,7 +53,7 @@ class V2RayService {
   void _setupAndroidLogReceiver() {
     try {
       // Use the plugin's MethodChannel name
-      const platform = MethodChannel('com.v2ray.v2ray/logs');
+      const platform = MethodChannel('com.flaming.cherubim/logs');
 
       platform.setMethodCallHandler((call) async {
         if (call.method == 'log') {

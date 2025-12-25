@@ -7,7 +7,7 @@
 -keep class io.flutter.plugin.editing.**  { *; }
 -keep class io.flutter.plugin.platform.**  { *; }
 -keep class io.flutter.plugins.**  { *; }
--keep class com.v2ray.v2ray.MainActivity { *; }
+-keep class com.flaming.cherubim.MainActivity { *; }
 
 # V2Ray Dan Plugin
 -keep class com.v2ray.dan.** { *; }

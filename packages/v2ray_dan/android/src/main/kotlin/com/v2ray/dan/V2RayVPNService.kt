@@ -461,8 +461,8 @@ class V2RayVPNService : VpnService(), V2RayServicesListener {
 
     private fun broadcastWidgetState(isConnected: Boolean) {
         try {
-            val intent = Intent("com.v2ray.v2ray.action.UPDATE_WIDGET_STATE")
-            intent.`package` = "com.v2ray.v2ray" // Target the app package specifically
+            val intent = Intent("com.flaming.cherubim.action.UPDATE_WIDGET_STATE")
+            intent.`package` = "com.flaming.cherubim" // Target the app package specifically
             intent.putExtra("is_connected", isConnected)
             sendBroadcast(intent)
         } catch (e: Exception) {
