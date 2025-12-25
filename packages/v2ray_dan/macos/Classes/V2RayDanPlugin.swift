@@ -507,57 +507,28 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
     log("Setting system proxy for interface: \(interface)")
     log("Proxy mode: \(proxyMode)")
     
-    var httpSuccess = true
-    var httpsSuccess = true
-    var socksSuccess = true
+    var commands: [String] = []
+    let safeInterface = "\"\(interface)\""
     
-    // Set proxies based on mode
+    // Configure HTTP/HTTPS
     if proxyMode == "http" || proxyMode == "both" {
-      log("Configuring HTTP proxy...")
-      log("  HTTP Proxy: 127.0.0.1:10809")
-      log("  HTTPS Proxy: 127.0.0.1:10809")
-      
-      httpSuccess = executeCommand("/usr/sbin/networksetup", ["-setwebproxy", interface, "127.0.0.1", "10809"])
-      log("HTTP proxy setup: \(httpSuccess ? "✓ Success" : "✗ Failed")")
-      
-      httpsSuccess = executeCommand("/usr/sbin/networksetup", ["-setsecurewebproxy", interface, "127.0.0.1", "10809"])
-      log("HTTPS proxy setup: \(httpsSuccess ? "✓ Success" : "✗ Failed")")
-      
-      // Enable HTTP/HTTPS proxies
-      log("Enabling HTTP/HTTPS proxies...")
-      let enableHttp = executeCommand("/usr/sbin/networksetup", ["-setwebproxystate", interface, "on"])
-      log("HTTP proxy enable: \(enableHttp ? "✓ Success" : "✗ Failed")")
-      
-      let enableHttps = executeCommand("/usr/sbin/networksetup", ["-setsecurewebproxystate", interface, "on"])
-      log("HTTPS proxy enable: \(enableHttps ? "✓ Success" : "✗ Failed")")
-      
-      httpSuccess = httpSuccess && httpsSuccess && enableHttp && enableHttps
+      commands.append("/usr/sbin/networksetup -setwebproxy \(safeInterface) 127.0.0.1 10809")
+      commands.append("/usr/sbin/networksetup -setsecurewebproxy \(safeInterface) 127.0.0.1 10809")
+      commands.append("/usr/sbin/networksetup -setwebproxystate \(safeInterface) on")
+      commands.append("/usr/sbin/networksetup -setsecurewebproxystate \(safeInterface) on")
     }
     
+    // Configure SOCKS
     if proxyMode == "socks" || proxyMode == "both" {
-      log("Configuring SOCKS proxy...")
-      log("  SOCKS Proxy: 127.0.0.1:10808")
-      
-      socksSuccess = executeCommand("/usr/sbin/networksetup", ["-setsocksfirewallproxy", interface, "127.0.0.1", "10808"])
-      log("SOCKS proxy setup: \(socksSuccess ? "✓ Success" : "✗ Failed")")
-      
-      // Enable SOCKS proxy
-      log("Enabling SOCKS proxy...")
-      let enableSocks = executeCommand("/usr/sbin/networksetup", ["-setsocksfirewallproxystate", interface, "on"])
-      log("SOCKS proxy enable: \(enableSocks ? "✓ Success" : "✗ Failed")")
-      
-      socksSuccess = socksSuccess && enableSocks
+      commands.append("/usr/sbin/networksetup -setsocksfirewallproxy \(safeInterface) 127.0.0.1 10808")
+      commands.append("/usr/sbin/networksetup -setsocksfirewallproxystate \(safeInterface) on")
     }
     
-    let overallSuccess = (proxyMode == "http" && httpSuccess) || 
-                        (proxyMode == "socks" && socksSuccess) || 
-                        (proxyMode == "both" && httpSuccess && socksSuccess)
-    
-    if overallSuccess {
+    if executeBatch(commands) {
       log("✓ System proxy configured successfully")
       result(true)
     } else {
-      log("⚠️ Some proxy settings failed, will require admin permissions on next attempt")
+      log("⚠️ Failed to invoke admin script for proxy setup")
       result(false)
     }
   }
@@ -570,71 +541,64 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
     }
     
     log("Clearing system proxy for interface: \(interface)")
+    let safeInterface = "\"\(interface)\""
     
-    // Disable proxies
-    log("Disabling HTTP proxy...")
-    let disableHttp = executeCommand("/usr/sbin/networksetup", ["-setwebproxystate", interface, "off"])
-    log("HTTP proxy disable: \(disableHttp ? "✓ Success" : "✗ Failed")")
+    var commands: [String] = []
     
-    log("Disabling HTTPS proxy...")
-    let disableHttps = executeCommand("/usr/sbin/networksetup", ["-setsecurewebproxystate", interface, "off"])
-    log("HTTPS proxy disable: \(disableHttps ? "✓ Success" : "✗ Failed")")
+    // Disable all proxies
+    commands.append("/usr/sbin/networksetup -setwebproxystate \(safeInterface) off")
+    commands.append("/usr/sbin/networksetup -setsecurewebproxystate \(safeInterface) off")
+    commands.append("/usr/sbin/networksetup -setsocksfirewallproxystate \(safeInterface) off")
     
-    log("Disabling SOCKS proxy...")
-    let disableSocks = executeCommand("/usr/sbin/networksetup", ["-setsocksfirewallproxystate", interface, "off"])
-    log("SOCKS proxy disable: \(disableSocks ? "✓ Success" : "✗ Failed")")
-    
-    if disableHttp && disableHttps && disableSocks {
+    if executeBatch(commands) {
       log("✓ System proxy cleared successfully")
       result(true)
     } else {
-      log("⚠️ Some proxy clear operations failed")
+      log("⚠️ Failed to clear system proxy")
       result(false)
     }
   }
   
-  private func executeCommand(_ command: String, _ arguments: [String]) -> Bool {
-    // First, try without admin privileges
-    let normalProcess = Process()
-    normalProcess.executableURL = URL(fileURLWithPath: command)
-    normalProcess.arguments = arguments
-    normalProcess.standardOutput = FileHandle.nullDevice
-    normalProcess.standardError = FileHandle.nullDevice
+  private func executeBatch(_ commands: [String]) -> Bool {
+    guard !commands.isEmpty else { return true }
+    
+    // Combine commands with "&&" so we stop if any command fails
+    let fullScript = commands.joined(separator: " && ")
+    
+    // Escaping for AppleScript:
+    // double quote " becomes \" in the shell string
+    // backslash \ becomes \\
+    let escapedScript = fullScript.replacingOccurrences(of: "\\", with: "\\\\")
+                                  .replacingOccurrences(of: "\"", with: "\\\"")
+    
+    let appleScriptSource = "do shell script \"\(escapedScript)\" with administrator privileges"
+    
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+    process.arguments = ["-e", appleScriptSource]
+    
+    // Pipes to capture error if needed
+    let outputPipe = Pipe()
+    let errorPipe = Pipe()
+    process.standardOutput = outputPipe
+    process.standardError = errorPipe
     
     do {
-      try normalProcess.run()
-      normalProcess.waitUntilExit()
+      try process.run()
+      process.waitUntilExit()
       
-      if normalProcess.terminationStatus == 0 {
-        return true
-      }
-      
-      // If failed, try with admin privileges
-      log("Command failed without admin, retrying with administrator privileges...")
-      
-      let fullCommand = "\(command) \(arguments.joined(separator: " "))"
-      let script = """
-      do shell script "\(fullCommand)" with administrator privileges
-      """
-      
-      let adminProcess = Process()
-      adminProcess.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-      adminProcess.arguments = ["-e", script]
-      adminProcess.standardOutput = FileHandle.nullDevice
-      adminProcess.standardError = FileHandle.nullDevice
-      
-      try adminProcess.run()
-      adminProcess.waitUntilExit()
-      
-      if adminProcess.terminationStatus == 0 {
-        log("✓ Command succeeded with admin privileges")
+      if process.terminationStatus == 0 {
         return true
       } else {
-        log("✗ Command failed even with admin privileges")
+        // Read error for logging
+        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        if let errorMsg = String(data: errorData, encoding: .utf8) {
+          log("OsaScript failed: \(errorMsg.trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
         return false
       }
     } catch {
-      log("Command execution error: \(command) \(arguments.joined(separator: " ")) - \(error)")
+      log("Failed to execute osascript: \(error)")
       return false
     }
   }
