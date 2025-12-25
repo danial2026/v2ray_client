@@ -452,22 +452,39 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
     }
     
     log("Setting system proxy for interface: \(interface)")
+    log("  HTTP Proxy: 127.0.0.1:10809")
+    log("  HTTPS Proxy: 127.0.0.1:10809")
+    log("  SOCKS Proxy: 127.0.0.1:10808")
     
     // Set HTTP proxy
+    log("Configuring HTTP proxy...")
     let setHttpProxy = executeCommand("/usr/sbin/networksetup", ["-setwebproxy", interface, "127.0.0.1", "10809"])
+    log("HTTP proxy setup: \(setHttpProxy ? "✓ Success" : "✗ Failed")")
+    
+    log("Configuring HTTPS proxy...")
     let setHttpsProxy = executeCommand("/usr/sbin/networksetup", ["-setsecurewebproxy", interface, "127.0.0.1", "10809"])
+    log("HTTPS proxy setup: \(setHttpsProxy ? "✓ Success" : "✗ Failed")")
+    
+    log("Configuring SOCKS proxy...")
     let setSocksProxy = executeCommand("/usr/sbin/networksetup", ["-setsocksfirewallproxy", interface, "127.0.0.1", "10808"])
+    log("SOCKS proxy setup: \(setSocksProxy ? "✓ Success" : "✗ Failed")")
     
     // Enable proxies
+    log("Enabling proxies...")
     let enableHttp = executeCommand("/usr/sbin/networksetup", ["-setwebproxystate", interface, "on"])
+    log("HTTP proxy enable: \(enableHttp ? "✓ Success" : "✗ Failed")")
+    
     let enableHttps = executeCommand("/usr/sbin/networksetup", ["-setsecurewebproxystate", interface, "on"])
+    log("HTTPS proxy enable: \(enableHttps ? "✓ Success" : "✗ Failed")")
+    
     let enableSocks = executeCommand("/usr/sbin/networksetup", ["-setsocksfirewallproxystate", interface, "on"])
+    log("SOCKS proxy enable: \(enableSocks ? "✓ Success" : "✗ Failed")")
     
     if setHttpProxy && setHttpsProxy && setSocksProxy && enableHttp && enableHttps && enableSocks {
       log("✓ System proxy configured successfully")
       result(true)
     } else {
-      log("⚠️ Some proxy settings may have failed (might need sudo permissions)")
+      log("⚠️ Some proxy settings failed, will require admin permissions on next attempt")
       result(false)
     }
   }
@@ -482,40 +499,69 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
     log("Clearing system proxy for interface: \(interface)")
     
     // Disable proxies
+    log("Disabling HTTP proxy...")
     let disableHttp = executeCommand("/usr/sbin/networksetup", ["-setwebproxystate", interface, "off"])
+    log("HTTP proxy disable: \(disableHttp ? "✓ Success" : "✗ Failed")")
+    
+    log("Disabling HTTPS proxy...")
     let disableHttps = executeCommand("/usr/sbin/networksetup", ["-setsecurewebproxystate", interface, "off"])
+    log("HTTPS proxy disable: \(disableHttps ? "✓ Success" : "✗ Failed")")
+    
+    log("Disabling SOCKS proxy...")
     let disableSocks = executeCommand("/usr/sbin/networksetup", ["-setsocksfirewallproxystate", interface, "off"])
+    log("SOCKS proxy disable: \(disableSocks ? "✓ Success" : "✗ Failed")")
     
     if disableHttp && disableHttps && disableSocks {
       log("✓ System proxy cleared successfully")
       result(true)
     } else {
-      log("⚠️ Some proxy clear operations may have failed")
+      log("⚠️ Some proxy clear operations failed")
       result(false)
     }
   }
   
   private func executeCommand(_ command: String, _ arguments: [String]) -> Bool {
-    // networksetup requires admin privileges on macOS
-    // Use osascript to run with admin privileges
-    let fullCommand = "\(command) \(arguments.joined(separator: " "))"
-    
-    let script = """
-    do shell script "\(fullCommand)" with administrator privileges
-    """
-    
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-    process.arguments = ["-e", script]
-    process.standardOutput = FileHandle.nullDevice
-    process.standardError = FileHandle.nullDevice
+    // First, try without admin privileges
+    let normalProcess = Process()
+    normalProcess.executableURL = URL(fileURLWithPath: command)
+    normalProcess.arguments = arguments
+    normalProcess.standardOutput = FileHandle.nullDevice
+    normalProcess.standardError = FileHandle.nullDevice
     
     do {
-      try process.run()
-      process.waitUntilExit()
-      return process.terminationStatus == 0
+      try normalProcess.run()
+      normalProcess.waitUntilExit()
+      
+      if normalProcess.terminationStatus == 0 {
+        return true
+      }
+      
+      // If failed, try with admin privileges
+      log("Command failed without admin, retrying with administrator privileges...")
+      
+      let fullCommand = "\(command) \(arguments.joined(separator: " "))"
+      let script = """
+      do shell script "\(fullCommand)" with administrator privileges
+      """
+      
+      let adminProcess = Process()
+      adminProcess.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+      adminProcess.arguments = ["-e", script]
+      adminProcess.standardOutput = FileHandle.nullDevice
+      adminProcess.standardError = FileHandle.nullDevice
+      
+      try adminProcess.run()
+      adminProcess.waitUntilExit()
+      
+      if adminProcess.terminationStatus == 0 {
+        log("✓ Command succeeded with admin privileges")
+        return true
+      } else {
+        log("✗ Command failed even with admin privileges")
+        return false
+      }
     } catch {
-      log("Command failed: \(command) \(arguments.joined(separator: " ")) - \(error)")
+      log("Command execution error: \(command) \(arguments.joined(separator: " ")) - \(error)")
       return false
     }
   }
