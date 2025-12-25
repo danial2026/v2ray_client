@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:v2ray_dan/v2ray_dan.dart';
 import '../models/v2ray_server.dart';
+import '../models/proxy_mode.dart';
 import 'logger_service.dart';
 import 'storage_service.dart';
 
@@ -24,6 +25,7 @@ class V2RayService {
   bool _isInitialized = false;
   Timer? _logPollingTimer;
   bool _isConnectInProgress = false;
+  ProxyMode _proxyMode = ProxyMode.socks; // Default to SOCKS
 
   VPNConnectionStatus get status => _status;
   V2RayServer? get currentServer => _currentServer;
@@ -204,11 +206,21 @@ class V2RayService {
   }
 
   // Connect to a V2Ray server
-  Future<bool> connect(V2RayServer server, {String? customDns, bool proxyOnly = false, bool useSystemDns = true}) async {
+  Future<bool> connect(
+    V2RayServer server, {
+    String? customDns,
+    bool proxyOnly = false,
+    bool useSystemDns = true,
+    ProxyMode? proxyMode,
+  }) async {
     _logger.info('========== Starting connection process ==========');
     _logger.info('Mode: ${proxyOnly ? "Proxy Only" : "VPN (System-wide)"}');
     _logger.info('Server: ${server.name} (${server.address}:${server.port})');
     _logger.info('Protocol: ${server.protocol}');
+
+    // Set proxy mode (with default)
+    _proxyMode = proxyMode ?? ProxyMode.socks;
+    _logger.info('Proxy Mode: ${_proxyMode.displayName}');
 
     // Platform validation
     if (!Platform.isAndroid && !Platform.isMacOS) {
@@ -558,10 +570,10 @@ class V2RayService {
       _logger.info('  - HTTP: 127.0.0.1:10809');
     }
 
-    // On macOS, automatically enable system proxy for system-wide behavior
+    // On macOS, automatically enable system proxy based on selected mode
     if (Platform.isMacOS) {
-      _logger.info('Enabling macOS system proxy for system-wide VPN behavior...');
-      await setSystemProxy();
+      _logger.info('Enabling macOS system proxy (${_proxyMode.displayName} mode)...');
+      await setSystemProxy(_proxyMode);
     }
 
     // POST-CONNECTION DIAGNOSTICS
@@ -652,21 +664,27 @@ class V2RayService {
   }
 
   // macOS System Proxy Control
-  Future<bool> setSystemProxy() async {
+  Future<bool> setSystemProxy(ProxyMode mode) async {
     if (!Platform.isMacOS) {
       _logger.warning('System proxy control is only available on macOS');
       return false;
     }
 
     try {
-      _logger.info('Enabling macOS system proxy...');
-      final result = await _v2rayPlugin.setSystemProxy();
-      if (result) {
+      _logger.info('Enabling macOS system proxy (${mode.displayName} mode)...');
+      
+      // Call native method with proxy mode argument
+      const platform = MethodChannel('v2ray_dan');
+      final result = await platform.invokeMethod('setSystemProxy', {
+        'proxyMode': mode.name,
+      });
+      
+      if (result == true) {
         _logger.info('✓ System proxy enabled successfully');
       } else {
         _logger.warning('Failed to enable system proxy (may need admin permissions)');
       }
-      return result;
+      return result == true;
     } catch (e) {
       _logger.error('Error enabling system proxy: $e');
       return false;

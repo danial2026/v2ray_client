@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flaming_cherubim/theme/app_theme.dart';
 import '../models/v2ray_server.dart';
 import '../models/ping_result.dart';
+import '../models/proxy_mode.dart';
 import '../services/v2ray_service.dart';
 import '../services/storage_service.dart';
 import '../services/ping_service.dart';
@@ -48,6 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
   UsageStats _currentStats = UsageStats(uploadBytes: 0, downloadBytes: 0, memoryMB: 0);
   StreamSubscription<VPNConnectionStatus>? _statusSubscription;
   StreamSubscription<UsageStats>? _statsSubscription;
+  ProxyMode _proxyMode = ProxyMode.socks; // macOS proxy mode
 
   @override
   void initState() {
@@ -128,6 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _useSystemDns = _storageService.loadUseSystemDns();
       _showUsageStats = _storageService.loadShowUsageStats();
       _censorAddresses = _storageService.loadCensorAddresses();
+      _proxyMode = _storageService.loadProxyMode(); // Load proxy mode for macOS
     });
   }
 
@@ -191,7 +195,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
         final server = _servers.firstWhere((s) => s.id == _selectedServerId);
 
-        final success = await _v2rayService.connect(server, customDns: _customDns, proxyOnly: _proxyOnly, useSystemDns: _useSystemDns);
+        final success = await _v2rayService.connect(
+          server,
+          customDns: _customDns,
+          proxyOnly: _proxyOnly,
+          useSystemDns: _useSystemDns,
+          proxyMode: Platform.isMacOS ? _proxyMode : null, // Pass proxy mode on macOS
+        );
 
         if (mounted && !success) {
           // Show error dialog with details
@@ -476,7 +486,9 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
-          _buildProxyToggle(),
+          // Show toggle on Android, proxy mode selector on macOS
+          if (Platform.isAndroid) _buildProxyToggle(),
+          if (Platform.isMacOS) _buildMacOSProxyModeSelector(),
           Expanded(child: _buildServerList()),
         ],
       ),
@@ -585,6 +597,75 @@ class _HomeScreenState extends State<HomeScreen> {
             },
             activeThumbColor: AppTheme.accentColor,
             activeTrackColor: AppTheme.accentColor.withValues(alpha: 0.2),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMacOSProxyModeSelector() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: Colors.black,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.settings_ethernet, size: 16, color: Colors.white.withValues(alpha: 0.5)),
+              const SizedBox(width: 8),
+              const Text(
+                'PROXY TYPE',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: ProxyMode.values.map((mode) {
+              final isSelected = _proxyMode == mode;
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: InkWell(
+                    onTap: () async {
+                      setState(() {
+                        _proxyMode = mode;
+                      });
+                      await _storageService.saveProxyMode(mode);
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isSelected 
+                            ? AppTheme.accentColor.withValues(alpha: 0.2)
+                            : Colors.white.withValues(alpha: 0.05),
+                        border: Border.all(
+                          color: isSelected 
+                              ? AppTheme.accentColor
+                              : Colors.white.withValues(alpha: 0.1),
+                          width: isSelected ? 2 : 1,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        mode.displayName,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+                          letterSpacing: 1.2,
+                          color: isSelected 
+                              ? AppTheme.accentColor
+                              : Colors.white.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),

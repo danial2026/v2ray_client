@@ -4,6 +4,7 @@ import '../models/v2ray_server.dart';
 import '../models/ping_settings.dart';
 import '../models/ping_result.dart';
 import '../models/dns_preset.dart';
+import '../models/proxy_mode.dart';
 
 class StorageService {
   static const String _serversKey = 'v2ray_servers';
@@ -18,6 +19,7 @@ class StorageService {
   static const String _showUsageStatsKey = 'show_usage_stats';
   static const String _censorAddressesKey = 'censor_addresses';
   static const String _urlHistoryKey = 'url_history';
+  static const String _proxyModeKey = 'proxy_mode';
 
   final SharedPreferences _prefs;
 
@@ -182,6 +184,17 @@ class StorageService {
 
   List<String> loadUrlHistory() {
     return _prefs.getStringList(_urlHistoryKey) ?? [];
+  }
+
+  // Proxy Mode operations (macOS)
+  Future<void> saveProxyMode(ProxyMode mode) async {
+    await _prefs.setString(_proxyModeKey, mode.toJson());
+  }
+
+  ProxyMode loadProxyMode() {
+    final modeStr = _prefs.getString(_proxyModeKey);
+    if (modeStr == null) return ProxyMode.defaultMode;
+    return ProxyMode.fromJson(modeStr);
   }
 
   // Clear all data

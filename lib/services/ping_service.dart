@@ -5,21 +5,29 @@ import '../models/ping_result.dart';
 import '../models/ping_settings.dart';
 
 import '../services/v2ray_service.dart';
+import '../services/logger_service.dart';
 
 class PingService {
+  final LoggerService _logger = LoggerService();
+
   // Ping a single server using V2Ray core (TCP/Http ping) if provider available
   // Fallback to ICMP if no provider (though V2RayService should always be provided)
   Future<PingResult> pingServer(V2RayServer server, PingSettings settings, [dynamic provider]) async {
+    _logger.info('Pinging server: ${server.name} (${server.address}:${server.port})');
+    
     // If provider is V2RayService, use it for real V2Ray ping
     if (provider is V2RayService) {
       try {
         final delay = await provider.getServerDelay(server);
         if (delay != null && delay > 0) {
+          _logger.info('✓ Server ${server.name} responded in ${delay}ms');
           return PingResult.success(serverId: server.id, latencyMs: delay);
         } else {
+          _logger.warning('✗ Server ${server.name} ping timeout or unreachable');
           return PingResult.failure(serverId: server.id, errorMessage: 'Timeout');
         }
-      } catch (e) {
+      } catch (e, stackTrace) {
+        _logger.error('✗ Server ${server.name} ping failed: $e', stackTrace: stackTrace);
         return PingResult.failure(serverId: server.id, errorMessage: e.toString());
       }
     }
@@ -30,7 +38,7 @@ class PingService {
       // Use system ping command
       // -c 1: one packet
       // -W 2: 2 seconds timeout
-      // Note: On some Android devices, the binary might be in /system/bin/ping
+      _logger.debug('Using system ping for ${server.name} at $address');
       final result = await Process.run('ping', ['-c', '1', '-W', '2', address]).timeout(const Duration(seconds: 3));
 
       if (result.exitCode == 0) {
@@ -39,13 +47,19 @@ class PingService {
         final match = RegExp(r'time=([\d.]+)\s*ms').firstMatch(output);
         if (match != null) {
           final latency = double.parse(match.group(1)!).round();
+          _logger.info('✓ Server ${server.name} ICMP ping: ${latency}ms');
           return PingResult.success(serverId: server.id, latencyMs: latency);
         }
       }
 
       // Fallback message if ping command is not found or fails
+      _logger.warning('✗ Server ${server.name} ping failed with exit code: ${result.exitCode}');
       return PingResult.failure(serverId: server.id, errorMessage: 'Ping failed (Exit: ${result.exitCode})');
-    } catch (e) {
+    } on TimeoutException catch (e) {
+      _logger.warning('✗ Server ${server.name} ping timeout after 3 seconds');
+      return PingResult.failure(serverId: server.id, errorMessage: 'Timeout: ${e.toString()}');
+    } catch (e, stackTrace) {
+      _logger.error('✗ Server ${server.name} network error: $e', stackTrace: stackTrace);
       return PingResult.failure(serverId: server.id, errorMessage: 'Error: ${e.toString()}');
     }
   }

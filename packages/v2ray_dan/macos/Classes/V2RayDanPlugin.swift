@@ -451,36 +451,62 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
       return
     }
     
+    // Extract proxy mode from arguments (default to "both" for backward compatibility)
+    var proxyMode = "both"
+    if let args = call.arguments as? [String: Any], let mode = args["proxyMode"] as? String {
+      proxyMode = mode
+    }
+    
     log("Setting system proxy for interface: \(interface)")
-    log("  HTTP Proxy: 127.0.0.1:10809")
-    log("  HTTPS Proxy: 127.0.0.1:10809")
-    log("  SOCKS Proxy: 127.0.0.1:10808")
+    log("Proxy mode: \(proxyMode)")
     
-    // Set HTTP proxy
-    log("Configuring HTTP proxy...")
-    let setHttpProxy = executeCommand("/usr/sbin/networksetup", ["-setwebproxy", interface, "127.0.0.1", "10809"])
-    log("HTTP proxy setup: \(setHttpProxy ? "✓ Success" : "✗ Failed")")
+    var httpSuccess = true
+    var httpsSuccess = true
+    var socksSuccess = true
     
-    log("Configuring HTTPS proxy...")
-    let setHttpsProxy = executeCommand("/usr/sbin/networksetup", ["-setsecurewebproxy", interface, "127.0.0.1", "10809"])
-    log("HTTPS proxy setup: \(setHttpsProxy ? "✓ Success" : "✗ Failed")")
+    // Set proxies based on mode
+    if proxyMode == "http" || proxyMode == "both" {
+      log("Configuring HTTP proxy...")
+      log("  HTTP Proxy: 127.0.0.1:10809")
+      log("  HTTPS Proxy: 127.0.0.1:10809")
+      
+      httpSuccess = executeCommand("/usr/sbin/networksetup", ["-setwebproxy", interface, "127.0.0.1", "10809"])
+      log("HTTP proxy setup: \(httpSuccess ? "✓ Success" : "✗ Failed")")
+      
+      httpsSuccess = executeCommand("/usr/sbin/networksetup", ["-setsecurewebproxy", interface, "127.0.0.1", "10809"])
+      log("HTTPS proxy setup: \(httpsSuccess ? "✓ Success" : "✗ Failed")")
+      
+      // Enable HTTP/HTTPS proxies
+      log("Enabling HTTP/HTTPS proxies...")
+      let enableHttp = executeCommand("/usr/sbin/networksetup", ["-setwebproxystate", interface, "on"])
+      log("HTTP proxy enable: \(enableHttp ? "✓ Success" : "✗ Failed")")
+      
+      let enableHttps = executeCommand("/usr/sbin/networksetup", ["-setsecurewebproxystate", interface, "on"])
+      log("HTTPS proxy enable: \(enableHttps ? "✓ Success" : "✗ Failed")")
+      
+      httpSuccess = httpSuccess && httpsSuccess && enableHttp && enableHttps
+    }
     
-    log("Configuring SOCKS proxy...")
-    let setSocksProxy = executeCommand("/usr/sbin/networksetup", ["-setsocksfirewallproxy", interface, "127.0.0.1", "10808"])
-    log("SOCKS proxy setup: \(setSocksProxy ? "✓ Success" : "✗ Failed")")
+    if proxyMode == "socks" || proxyMode == "both" {
+      log("Configuring SOCKS proxy...")
+      log("  SOCKS Proxy: 127.0.0.1:10808")
+      
+      socksSuccess = executeCommand("/usr/sbin/networksetup", ["-setsocksfirewallproxy", interface, "127.0.0.1", "10808"])
+      log("SOCKS proxy setup: \(socksSuccess ? "✓ Success" : "✗ Failed")")
+      
+      // Enable SOCKS proxy
+      log("Enabling SOCKS proxy...")
+      let enableSocks = executeCommand("/usr/sbin/networksetup", ["-setsocksfirewallproxystate", interface, "on"])
+      log("SOCKS proxy enable: \(enableSocks ? "✓ Success" : "✗ Failed")")
+      
+      socksSuccess = socksSuccess && enableSocks
+    }
     
-    // Enable proxies
-    log("Enabling proxies...")
-    let enableHttp = executeCommand("/usr/sbin/networksetup", ["-setwebproxystate", interface, "on"])
-    log("HTTP proxy enable: \(enableHttp ? "✓ Success" : "✗ Failed")")
+    let overallSuccess = (proxyMode == "http" && httpSuccess) || 
+                        (proxyMode == "socks" && socksSuccess) || 
+                        (proxyMode == "both" && httpSuccess && socksSuccess)
     
-    let enableHttps = executeCommand("/usr/sbin/networksetup", ["-setsecurewebproxystate", interface, "on"])
-    log("HTTPS proxy enable: \(enableHttps ? "✓ Success" : "✗ Failed")")
-    
-    let enableSocks = executeCommand("/usr/sbin/networksetup", ["-setsocksfirewallproxystate", interface, "on"])
-    log("SOCKS proxy enable: \(enableSocks ? "✓ Success" : "✗ Failed")")
-    
-    if setHttpProxy && setHttpsProxy && setSocksProxy && enableHttp && enableHttps && enableSocks {
+    if overallSuccess {
       log("✓ System proxy configured successfully")
       result(true)
     } else {
