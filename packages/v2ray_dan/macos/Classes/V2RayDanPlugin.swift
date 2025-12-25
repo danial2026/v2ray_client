@@ -51,6 +51,12 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
     case "getSystemDns":
       getSystemDns(result: result)
       
+    case "setSystemProxy":
+      setSystemProxy(call: call, result: result)
+      
+    case "clearSystemProxy":
+      clearSystemProxy(result: result)
+      
     default:
       log("Method not implemented: \(call.method)")
       result(FlutterMethodNotImplemented)
@@ -327,16 +333,19 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
   }
   
   private func getServerDelay(call: FlutterMethodCall, result: @escaping FlutterResult) {
-    // Test connection through the proxy
+    // Test connection through the HTTP proxy (more reliable than SOCKS with URLSession)
     DispatchQueue.global().async { [weak self] in
       let startTime = Date()
       
-      // Create a URL session that uses our proxy
+      // Create a URL session that uses our HTTP proxy
       let config = URLSessionConfiguration.ephemeral
       config.connectionProxyDictionary = [
-        kCFNetworkProxiesSOCKSEnable: true,
-        kCFNetworkProxiesSOCKSProxy: "127.0.0.1",
-        kCFNetworkProxiesSOCKSPort: 10808
+        kCFNetworkProxiesHTTPEnable: true,
+        kCFNetworkProxiesHTTPProxy: "127.0.0.1",
+        kCFNetworkProxiesHTTPPort: 10809,
+        kCFNetworkProxiesHTTPSEnable: true,
+        kCFNetworkProxiesHTTPSProxy: "127.0.0.1",
+        kCFNetworkProxiesHTTPSPort: 10809
       ]
       config.timeoutIntervalForRequest = 10
       
@@ -345,11 +354,16 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
       
       let semaphore = DispatchSemaphore(value: 0)
       var delay: Int = -1
+      var errorMsg: String = ""
       
       let task = session.dataTask(with: url) { _, response, error in
         if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 204 || httpResponse.statusCode == 200 {
           delay = Int(Date().timeIntervalSince(startTime) * 1000)
-        } else if error != nil {
+        } else if let error = error {
+          errorMsg = error.localizedDescription
+          delay = -1
+        } else {
+          errorMsg = "Unknown error"
           delay = -1
         }
         semaphore.signal()
@@ -359,7 +373,11 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
       _ = semaphore.wait(timeout: .now() + 10)
       
       DispatchQueue.main.async {
-        self?.log("Server delay test: \(delay)ms")
+        if delay > 0 {
+          self?.log("✓ Server delay test: \(delay)ms")
+        } else {
+          self?.log("❌ Server delay test failed: \(errorMsg)")
+        }
         result(delay)
       }
     }
@@ -389,6 +407,109 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
     
     log("System DNS: \(dnsServers)")
     result(dnsServers)
+  }
+  
+  private func getPrimaryNetworkInterface() -> String? {
+    // Try to get the primary network interface (usually Wi-Fi or Ethernet)
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
+    process.arguments = ["-listnetworkserviceorder"]
+    
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+    
+    do {
+      try process.run()
+      process.waitUntilExit()
+      
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      if let output = String(data: data, encoding: .utf8) {
+        // Parse output to find first active interface
+        let lines = output.components(separatedBy: "\n")
+        for line in lines {
+          // Look for lines like "(1) Wi-Fi" or "(1) Ethernet"
+          if line.contains("Wi-Fi") {
+            return "Wi-Fi"
+          } else if line.contains("Ethernet") {
+            return "Ethernet"
+          }
+        }
+      }
+    } catch {
+      log("Failed to get network interface: \(error)")
+    }
+    
+    // Default fallback
+    return "Wi-Fi"
+  }
+  
+  private func setSystemProxy(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let interface = getPrimaryNetworkInterface() else {
+      log("❌ Could not determine network interface")
+      result(FlutterError(code: "NO_INTERFACE", message: "Could not determine network interface", details: nil))
+      return
+    }
+    
+    log("Setting system proxy for interface: \(interface)")
+    
+    // Set HTTP proxy
+    let setHttpProxy = executeCommand("/usr/sbin/networksetup", ["-setwebproxy", interface, "127.0.0.1", "10809"])
+    let setHttpsProxy = executeCommand("/usr/sbin/networksetup", ["-setsecurewebproxy", interface, "127.0.0.1", "10809"])
+    let setSocksProxy = executeCommand("/usr/sbin/networksetup", ["-setsocksfirewallproxy", interface, "127.0.0.1", "10808"])
+    
+    // Enable proxies
+    let enableHttp = executeCommand("/usr/sbin/networksetup", ["-setwebproxystate", interface, "on"])
+    let enableHttps = executeCommand("/usr/sbin/networksetup", ["-setsecurewebproxystate", interface, "on"])
+    let enableSocks = executeCommand("/usr/sbin/networksetup", ["-setsocksfirewallproxystate", interface, "on"])
+    
+    if setHttpProxy && setHttpsProxy && setSocksProxy && enableHttp && enableHttps && enableSocks {
+      log("✓ System proxy configured successfully")
+      result(true)
+    } else {
+      log("⚠️ Some proxy settings may have failed (might need sudo permissions)")
+      result(false)
+    }
+  }
+  
+  private func clearSystemProxy(result: @escaping FlutterResult) {
+    guard let interface = getPrimaryNetworkInterface() else {
+      log("❌ Could not determine network interface")
+      result(FlutterError(code: "NO_INTERFACE", message: "Could not determine network interface", details: nil))
+      return
+    }
+    
+    log("Clearing system proxy for interface: \(interface)")
+    
+    // Disable proxies
+    let disableHttp = executeCommand("/usr/sbin/networksetup", ["-setwebproxystate", interface, "off"])
+    let disableHttps = executeCommand("/usr/sbin/networksetup", ["-setsecurewebproxystate", interface, "off"])
+    let disableSocks = executeCommand("/usr/sbin/networksetup", ["-setsocksfirewallproxystate", interface, "off"])
+    
+    if disableHttp && disableHttps && disableSocks {
+      log("✓ System proxy cleared successfully")
+      result(true)
+    } else {
+      log("⚠️ Some proxy clear operations may have failed")
+      result(false)
+    }
+  }
+  
+  private func executeCommand(_ command: String, _ arguments: [String]) -> Bool {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: command)
+    process.arguments = arguments
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    
+    do {
+      try process.run()
+      process.waitUntilExit()
+      return process.terminationStatus == 0
+    } catch {
+      log("Command failed: \(command) \(arguments.joined(separator: " ")) - \(error)")
+      return false
+    }
   }
   
   // MARK: - Logging
