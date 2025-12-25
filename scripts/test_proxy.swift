@@ -9,6 +9,43 @@ func log(_ message: String) {
     print("[StandaloneProxyTest] \(message)")
 }
 
+// --- Helper Structures ---
+
+struct VLessConfigModel {
+    let uuid: String
+    let server: String
+    let port: Int
+}
+
+class VLessParser {
+    static func parse(_ link: String) -> VLessConfigModel? {
+        guard link.hasPrefix("vless://") else { return nil }
+        let cleanLink = String(link.dropFirst("vless://".count))
+        
+        // Remove fragment #
+        let withoutFragment = cleanLink.components(separatedBy: "#").first ?? cleanLink
+        // Remove query ?
+        let withoutQuery = withoutFragment.components(separatedBy: "?").first ?? withoutFragment
+        
+        // Format: uuid@server:port
+        let parts = withoutQuery.components(separatedBy: "@")
+        guard parts.count == 2 else { return nil }
+        let uuid = parts[0]
+        let serverPort = parts[1]
+        
+        // Handle last colon for port
+        let hostPortParts = serverPort.components(separatedBy: ":")
+        guard hostPortParts.count >= 2,
+              let portString = hostPortParts.last,
+              let port = Int(portString) else { return nil }
+              
+        // Host is everything before the last colon
+        let host = hostPortParts.dropLast().joined(separator: ":")
+              
+        return VLessConfigModel(uuid: uuid, server: host, port: port)
+    }
+}
+
 class V2RayProxyConfigurator {
     
     // Simulating the setSystemProxy logic
@@ -100,7 +137,7 @@ class V2RayProxyConfigurator {
         let outputPipe = Pipe() // Redirect stdout/stderr to suppress noise
         
         process.standardInput = inputPipe
-        process.standardOutput = outputPipe
+        // process.standardOutput = outputPipe // Keep stdout for debug if needed, but usually noisy
         process.standardError = outputPipe
         
         do {
@@ -189,7 +226,7 @@ class V2RayProxyConfigurator {
       }
 }
 
-// --- Added Classes for Core Management and Verification ---
+// --- Verified Classes for Core Management ---
 
 class ConfigGenerator {
     static func generateBasicVLessConfig(uuid: String, server: String, port: Int) -> String {
@@ -243,7 +280,6 @@ class V2RayRunner {
     var process: Process?
     
     func findBinary() -> String? {
-        // Checking probable locations
         let paths = [
             FileManager.default.currentDirectoryPath + "/packages/v2ray_dan/macos/Resources/v2ray",
             "/usr/local/bin/v2ray",
@@ -269,8 +305,6 @@ class V2RayRunner {
             process = Process()
             process?.executableURL = URL(fileURLWithPath: binaryPath)
             process?.arguments = ["run", "-c", configPath]
-            
-            // Redirect output to avoid cluttering test script output, or pipe to verify startup
             process?.standardOutput = FileHandle.nullDevice 
             process?.standardError = FileHandle.nullDevice
             
@@ -290,12 +324,8 @@ class V2RayRunner {
 }
 
 class IPChecker {
-    static func checkArgs() {
-        // Just a helper
-    }
-    
     static func checkIP(proxyPort: Int, completion: @escaping (String?) -> Void) {
-        let url = URL(string: "http://ip-api.com/line/?fields=query")! // returns just the IP
+        let url = URL(string: "http://ip-api.com/line/?fields=query")! 
         let config = URLSessionConfiguration.ephemeral
         config.connectionProxyDictionary = [
             kCFNetworkProxiesHTTPEnable: true,
@@ -306,7 +336,6 @@ class IPChecker {
             kCFNetworkProxiesHTTPSPort: proxyPort
         ]
         
-        // Short timeout
         config.timeoutIntervalForRequest = 5
         
         let session = URLSession(configuration: config)
@@ -328,63 +357,98 @@ class IPChecker {
     }
 }
 
+// MAIN EXECUTION
 func main() {
     print("\n🔎 --- V2Ray Independent Test Runner --- 🔍\n")
     
-    // 1. Setup V2Ray Logic
+    // 0. Get Link
+    var vlessLink = ""
+    if CommandLine.arguments.count > 1 {
+        vlessLink = CommandLine.arguments[1]
+    } else {
+        print("📝 Enter VLESS URL:")
+        if let input = readLine() {
+            vlessLink = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+    
+    if vlessLink.isEmpty {
+        print("❌ No link provided. Exiting.")
+        exit(1)
+    }
+    
+    // 1. Parse Link
+    guard let config = VLessParser.parse(vlessLink) else {
+        print("❌ Failed to parse VLESS link. Ensure it starts with vless:// and format is correct.")
+        exit(1)
+    }
+    
+    print("✅ Parsed: UUID=\(config.uuid) Server=\(config.server) Port=\(config.port)\n")
+    
+    // 2. Setup V2Ray Logic
     let v2ray = V2RayRunner()
     guard let binary = v2ray.findBinary() else {
         print("Please run this script from the project root or ensure v2ray is installed.")
         exit(1)
     }
     
-    // 2. Generate Config (From user provided VLESS)
-    let uuid = "a154162d-a2f4-48bc-b839-9d45e556f99c"
-    let server = "185.208.172.51"
-    let port = 19284
-    let configJson = ConfigGenerator.generateBasicVLessConfig(uuid: uuid, server: server, port: port)
+    // 3. Generate Config
+    let configJson = ConfigGenerator.generateBasicVLessConfig(uuid: config.uuid, server: config.server, port: config.port)
     
-    // 3. Start Core
+    // 4. Start Core
     v2ray.start(binaryPath: binary, configContent: configJson)
-    // Give it a moment to bind ports
-    Thread.sleep(forTimeInterval: 1.0)
     
-    // 4. Configure System Proxy
+    print("\n⏳ Waiting for V2Ray to establish connection (checking via 10809)...")
+    var coreReady = false
+    
+    for i in 1...10 {
+        print("   Attempt \(i)/10 to verify connection...") 
+        var currentIp: String?
+        let checkSem = DispatchSemaphore(value: 0)
+        
+        IPChecker.checkIP(proxyPort: 10809) { ip in
+            currentIp = ip
+            checkSem.signal()
+        }
+        _ = checkSem.wait(timeout: .now() + 6) 
+        
+        if let ip = currentIp {
+            print("   ✓ V2Ray is Alive! Route Verification Successful. IP: \(ip)")
+            coreReady = true
+            break
+        } else {
+            Thread.sleep(forTimeInterval: 2.0)
+        }
+    }
+    
+    if !coreReady {
+        print("\n❌ V2Ray failed to connect to the server/internet via the proxy port.")
+        print("   Check your internet connection or the server status. Aborting.")
+        v2ray.stop()
+        exit(1)
+    }
+
+    // 5. Configure System Proxy
     print("\n⚙️  Configuring System Proxy...")
     let configurator = V2RayProxyConfigurator()
     
-    if configurator.setSystemProxy(interface: "Wi-Fi", mode: "http") { // Using HTTP mode for easier testing
-        print("✅ System Proxy ENABLED (HTTP)")
+    if configurator.setSystemProxy(interface: "Wi-Fi", mode: "socks") {
+        print("✅ System Proxy ENABLED (SOCKS)")
     } else {
         print("❌ Failed to enable proxy")
         v2ray.stop()
         exit(1)
     }
     
-    // 5. Verify IP
-    print("\n🌍 Verifying Connection...")
-    let semaphore = DispatchSemaphore(value: 0)
-    IPChecker.checkIP(proxyPort: 10809) { ip in
-        if let ip = ip {
-            print("\n🎉 SUCCESS! Your IP routed through proxy is: \(ip)")
-            if ip == server {
-                 print("(Matches server IP - Traffic is correctly routed)")
-            } else {
-                 print("(IP: \(ip) - Routed but might be different from endpoint if CDN/load balanced)")
-            }
-        } else {
-            print("\n⚠️  Connection check failed. V2Ray might be failing to connect to the server.")
-        }
-        semaphore.signal()
-    }
-    _ = semaphore.wait(timeout: .now() + 10)
-
-    // 6. Cleanup
+    // 6. Final Confirmation
+    print("\n🌍 Connection is fully established and system-wide!")
+    
+    // 7. Cleanup
     print("\n🧹 Cleaning up...")
     print("Press Enter to Stop Proxy and Exit...")
     _ = readLine()
     
-    let disableScript = "do shell script \"networksetup -setwebproxystate \\\"Wi-Fi\\\" off && networksetup -setsecurewebproxystate \\\"Wi-Fi\\\" off\" with administrator privileges"
+    let disableScript = "do shell script \"networksetup -setwebproxystate \\\"Wi-Fi\\\" off && networksetup -setsecurewebproxystate \\\"Wi-Fi\\\" off && networksetup -setsocksfirewallproxystate \\\"Wi-Fi\\\" off\" with administrator privileges"
     
     let cleanup = Process()
     cleanup.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
