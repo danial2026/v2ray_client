@@ -496,9 +496,17 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
   }
   
   private func executeCommand(_ command: String, _ arguments: [String]) -> Bool {
+    // networksetup requires admin privileges on macOS
+    // Use osascript to run with admin privileges
+    let fullCommand = "\(command) \(arguments.joined(separator: " "))"
+    
+    let script = """
+    do shell script "\(fullCommand)" with administrator privileges
+    """
+    
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: command)
-    process.arguments = arguments
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+    process.arguments = ["-e", script]
     process.standardOutput = FileHandle.nullDevice
     process.standardError = FileHandle.nullDevice
     
