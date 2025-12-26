@@ -1,6 +1,6 @@
 # Flaming Cherubim — Complete Documentation
 
-A modern, high-performance V2Ray VPN client for Android
+A modern, high-performance V2Ray VPN client for Android and macOS
 
 Flaming Cherubim is a powerful V2Ray client built from the ground up with Flutter and Kotlin, designed to provide a fast, reliable, and user-friendly VPN experience. Unlike other V2Ray clients that rely on third-party plugins, this app uses a custom-built native plugin that integrates directly with the official V2Ray core, offering maximum control, transparency, and performance.
 
@@ -8,7 +8,7 @@ Flaming Cherubim is a powerful V2Ray client built from the ground up with Flutte
 
 ## Overview
 
-Flaming Cherubim brings enterprise-grade proxy capabilities to your Android device with an emphasis on speed, reliability, and simplicity. Whether you need system-wide VPN protection or just a local proxy for specific applications, this app delivers both with a clean, minimal interface that stays out of your way.
+Flaming Cherubim brings enterprise-grade proxy capabilities to your devices with an emphasis on speed, reliability, and simplicity. Whether you need system-wide VPN protection or just a local proxy for specific applications, this app delivers both with a clean, minimal interface that stays out of your way.
 
 ---
 
@@ -61,9 +61,21 @@ You can easily filter between different log sources, export logs for debugging o
 
 If the app crashes or is force-stopped while connected, the VPN connection is gracefully terminated to prevent traffic leaks. Your device won't continue sending unencrypted traffic if the VPN goes down unexpectedly.
 
+#### Home Screen Widgets (Android)
+
+Two Android widgets are available for quick access:
+1. **Connect Widget**: Quick-toggle connection without opening the app.
+2. **Circle Status Widget**: Minimal circular status indicator.
+
+#### Usage Statistics & Indicators
+
+The AppBar provides real-time monitoring:
+- **Speeds & RAM**: Live upload/download monitoring and app memory usage.
+- **IP & Location**: Current connected IP and country flag.
+
 #### Modern, Minimal UI
 
-The app features a dark theme that's easy on the eyes with a sleek black design. Smooth animations provide polished transitions and loading states. An intuitive bottom navigation bar gives quick access to all sections. The main screen shows a large, color-coded connect/disconnect button for clear connection status. The server list displays clean server cards with latency indicators and country flags, and you can swipe to delete servers.
+The app features a dark-themed interface with smooth animations and intuitive navigation. A large color-coded button handles connection status, and the server list supports easy management with swipe-to-delete and privacy censoring options.
 
 ---
 
@@ -129,10 +141,15 @@ Core Components:
    - Default DNS servers
    - Logging settings
 
-Third-Party Native Components:
+- V2Ray Core: Official V2Ray binary (Android and macOS)
+- tun2socks: Bridges TUN interface to SOCKS5 (Android VPN mode)
 
-- V2Ray Core: Official V2Ray binary compiled for Android (ARM/ARM64)
-- tun2socks: Bridges the TUN interface to SOCKS5 proxy (used in VPN mode)
+### macOS Implementation (System Proxy)
+
+On macOS, the app configures system-wide proxy settings:
+- **Swift Plugin**: Manages the V2Ray core lifecycle and system proxy settings.
+- **System Proxy**: Automatically configures SOCKS (10808) and HTTP (10809) proxies via Foundation and `networksetup`.
+- **Core Integration**: Bundled binaries with managed background execution.
 
 ### Communication Flow
 
@@ -260,15 +277,15 @@ VPN mode uses roughly 70-120MB RAM with minimal CPU when idle. Proxy mode uses r
 
 ---
 
-## System Requirements
-
+### Android
 - Android 5.0 (Lollipop) or higher
-- ARM or ARM64 architecture (ARMv7 and ARMv8)
-- Permissions required:
-  - VPN (for VPN mode)
-  - Internet access
-  - Foreground service
-  - Wake lock (keep connection alive)
+- ARM (v7) or ARM64 (v8) architecture
+- Permissions: VPN, Internet, Foreground Service, Wake Lock
+
+### macOS
+- macOS 11.0 (Big Sur) or higher
+- Intel or Apple Silicon (M1/M2/M3)
+- Permissions: System Proxy configuration, Local Network, Internet
 
 ---
 
@@ -314,6 +331,13 @@ v2ray_flutter_app/
 │   │   │   ├── kotlin/           # MainActivity
 │   │   │   └── assets/           # V2Ray core binaries
 │   │   └── build.gradle
+│   └── build.gradle
+│
+├── macos/                        # macOS-specific configuration
+│   ├── Runner/
+│   │   ├── MainFlutterWindow.swift
+│   │   ├── AppDelegate.swift
+│   │   └── V2RayDanPlugin.swift   # macOS Native Plugin Implementation
 │   └── build.gradle
 │
 ├── assets/                       # App assets (logo, etc.)

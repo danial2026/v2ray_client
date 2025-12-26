@@ -31,13 +31,15 @@ VPN Mode provides full system VPN with traffic routing for all apps. Proxy-Only 
 
 ### Advanced Features
 
-- Custom ping settings with configurable auto-ping intervals and methods (TCP/HTTP)
+- Custom ping settings with configurable intervals and methods
+- Home screen widgets for connection control and status (Android)
+- Real-time traffic monitoring and RAM usage indicators
 - Minimal UI with clean, dark-themed interface
-- Comprehensive logging with real-time logs from app, V2Ray core, and tun2socks
-- Kill switch for graceful shutdown protection when app crashes
-- Built-in browser that opens to https://danials.org/network for speed and latency testing, with all traffic automatically proxied and full URL input and navigation
-- DNS leak protection to prevent DNS queries from bypassing the VPN
-- Intelligent server selection to auto-select fastest server based on ping
+- Comprehensive logging and diagnostics
+- Kill switch for graceful shutdown protection
+- Built-in browser with automatic proxy routing
+- DNS leak protection and intelligent server selection
+- Privacy censorship mode for server addresses
 
 ## Disclaimer
 
