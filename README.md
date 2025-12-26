@@ -6,9 +6,18 @@ A fast, modern, and high-performance V2Ray VPN client built with Flutter.
 
 Uses a custom native plugin to run the official V2Ray core directly.
 
-![Screenshot 1](screenshots/screenshot-1.png)
-![Screenshot 2](screenshots/screenshot-2.png)
-![Screenshot 3](screenshots/screenshot-3.png)
+### Android
+
+![Screenshot 1](screenshots/android/screenshot-1.png)
+![Screenshot 2](screenshots/android/screenshot-2.png)
+![Screenshot 3](screenshots/android/screenshot-3.png)
+
+### macOS
+
+![Screenshot 1](screenshots/macos/screenshot-1.png)
+![Screenshot 2](screenshots/macos/screenshot-2.png)
+![Screenshot 3](screenshots/macos/screenshot-3.png)
+
 
 ## Features
 
