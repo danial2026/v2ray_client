@@ -95,121 +95,76 @@ The services layer includes v2ray_service.dart for high-level VPN/proxy operatio
 
 #### Kotlin (Native Android Layer)
 
-The Kotlin layer is where the heavy lifting happens, managing the V2Ray core and Android VPN APIs.
+The Kotlin layer manages the V2Ray core and Android VPN APIs.
 
-Core Components:
+1. **V2RayDanPlugin.kt**: Main bridge handling `initialize`, `startV2Ray`, `stopV2Ray`, and permission requests.
+2. **V2RayCoreManager.kt**: Managed via `libv2ray` (Mobile bind). Handles core lifecycle, JSON config loading, and Go-level protection hooks.
+3. **V2RayVPNService.kt**: Android `VpnService` that establishes a TUN interface (172.19.0.1) and manages a `tun2socks` supervisor thread.
+4. **V2RayProxyOnlyService.kt**: Starts core with local inbounds only; runs as a foreground service with notification.
+5. **FD Passing**: Uses `LocalSocket` to pass the TUN file descriptor from Kotlin to the `tun2socks` binary.
 
-1. V2RayDanPlugin.kt
-   - Main plugin class that Flutter communicates with
-   - Handles method channel calls from Dart
-   - Routes commands to appropriate services
-   - Passes server configurations and settings to native services
+#### Swift (Native macOS Layer)
 
-2. V2RayCoreManager.kt
-   - Manages the V2Ray core lifecycle
-   - Loads and validates V2Ray configuration JSON
-   - Starts and stops the V2Ray process
-   - Monitors core status and output logs
-   - Extracts and manages V2Ray core binaries from app assets
+The Swift layer provides desktop-integrated proxy management.
 
-3. V2RayVPNService.kt (VPN Mode)
-   - Extends Android's VpnService class
-   - Creates and configures the TUN interface
-   - Sets DNS servers with leak protection
-   - Routes traffic through tun2socks
-   - Manages the VPN lifecycle (start, stop, reconnect)
-   - Shows persistent notification when VPN is active
-   - Handles device IP configuration and routing rules
+1. **V2RayDanPlugin.swift**:
+   - Executes bundled or system `v2ray`/`xray` binaries directly via `Process()`.
+   - Manages system-wide SOCKS (10808) and HTTP/HTTPS (10809) proxies.
+2. **Proxy Management**:
+   - Uses `networksetup` via `osascript` (with admin privileges) or `sudo` (authenticated via Touch ID).
+   - Primary interface detection via `/sbin/route` and hardware port mapping.
+3. **Latency Verification**: Implements native `getServerDelay` using `URLSession` proxied through the local core.
 
-4. V2RayProxyOnlyService.kt (Proxy Mode)
-   - Lightweight alternative to VPN mode
-   - Starts V2Ray core with SOCKS5/HTTP inbound configuration
-   - No TUN interface or routing changes
-   - Foreground service with notification
-   - Lower resource usage
+#### Native Components
 
-5. Utilities.kt
-   - Configuration builder for V2Ray JSON
-   - Protocol handlers (VMess, VLESS)
-   - TLS and transport settings
-   - DNS configuration helpers
-   - Inbound and outbound rule generators
-
-6. AppConfigs.kt
-   - System-wide configuration constants
-   - Port definitions (SOCKS: 10808, HTTP: 10809)
-   - Default DNS servers
-   - Logging settings
-
-- V2Ray Core: Official V2Ray binary (Android and macOS)
-- tun2socks: Bridges TUN interface to SOCKS5 (Android VPN mode)
-
-### macOS Implementation (System Proxy)
-
-On macOS, the app configures system-wide proxy settings:
-- **Swift Plugin**: Manages the V2Ray core lifecycle and system proxy settings.
-- **System Proxy**: Automatically configures SOCKS (10808) and HTTP (10809) proxies via Foundation and `networksetup`.
-- **Core Integration**: Bundled binaries with managed background execution.
+- **V2Ray Core**: Official binary for Android (ARM64/ARMv7) and macOS (Intel/Apple Silicon).
+- **tun2socks**: Bridges TUN-to-SOCKS (Android VPN mode).
 
 ### Communication Flow
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Flutter (Dart)                       │
-│  ┌────────────┐   ┌──────────────┐   ┌──────────────┐       │
-│  │ HomeScreen │──▶│ V2RayService │──▶│ MethodChannel│       │
-│  └────────────┘   └──────────────┘   └───────┬──────┘       │
-└────────────────────────────────────────────────┼────────────┘
-                                                 │
-                                                 ▼
-┌──────────────────────────────────────────────────────────────┐
-│                      Kotlin (Native)                         │
-│  ┌──────────────────┐                                        │
-│  │  V2RayDanPlugin  │                                        │
-│  └────────┬─────────┘                                        │
-│           │                                                  │
-│    ┌──────┴──────────┐                                       │
-│    ▼                 ▼                                       │
-│  ┌──────────────┐  ┌────────────────────┐                    │
-│  │ VPN Service  │  │ Proxy-Only Service │                    │
-│  └──────┬───────┘  └─────────┬──────────┘                    │
-│         │                    │                               │
-│         └─────────┬──────────┘                               │
-│                   ▼                                          │
-│          ┌──────────────────┐                                │
-│          │ V2RayCoreManager │                                │
-│          └────────┬─────────┘                                │
-└───────────────────┼──────────────────────────────────────────┘
-                    ▼
-          ┌──────────────────┐
-          │   V2Ray Core     │ (Official binary)
-          └──────────────────┘
+┌──────────────────────────────────────────────┐
+│                Flutter (Dart)                │
+│  ┌────────────┐   ┌──────────────┐           │
+│  │ HomeScreen │──▶│ V2RayService │           │
+│  └────────────┘   └───────┬──────┘           │
+└───────────────────────────┼──────────────────┘
+              MethodChannel │ ▲ EventChannel (Status)
+              Channel(logs) │ │ Channel(logs)
+                            ▼ │
+┌─────────────────────────────┴──────────────────────────────────┐
+│                      Native Layer (Swift/Kotlin)               │
+│  ┌────────────────────┐   Managed    ┌──────────────────────┐  │
+│  │  V2RayDanPlugin    │─────────────▶│   V2Ray Core / Bin   │  │
+│  └────────┬───────────┘   Process    └──────────┬───────────┘  │
+│           │                                     │              │
+│    ┌──────┴──────────┐                          │              │
+│    ▼                 ▼                          │              │
+│  ┌─────────────┐   ┌─────────────┐              │              │
+│  │ VPN/Proxy   │   │ Sys Proxy   │              │              │
+│  │ (Android)   │   │ (macOS)     │              │              │
+│  └─────────────┘   └─────────────┘              │              │
+└─────────────────────────────────────────────────┼──────────────┘
+                                                  ▼
+                                          Network Traffic
 ```
 
-### How VPN Mode Works (Step-by-Step)
+### How it Works: Android (VPN Mode)
 
-1. User initiates connection by tapping the connect button in the Flutter UI
-2. Flutter requests VPN by calling startVPN() on V2RayService
-3. Android prompts for VPN permission if not already granted
-4. Flutter sends server config to Kotlin via platform channel using a method channel call
-5. V2RayVPNService is launched as a foreground service
-6. Android creates a virtual network interface (TUN interface)
-7. V2RayCoreManager starts the V2Ray process with the generated configuration
-8. All device traffic is routed to the TUN interface
-9. Traffic flows from app network requests to the TUN interface, where tun2socks captures packets and forwards them to the V2Ray SOCKS proxy on localhost:10808, then V2Ray encrypts and sends to the remote server
-10. Native code sends connection status back to Flutter via event channel
-11. Flutter UI updates to show "Connected" state with green indicator
+1. **Initiation**: User taps connect; Flutter calls `startV2Ray()` via MethodChannel.
+2. **VpnService**: `V2RayVPNService` starts; Android creates a TUN interface (172.19.0.1).
+3. **Supervisor**: A supervisor thread launches the `tun2socks` binary and monitors its lifecycle.
+4. **FD Passing**: Kotlin establishes a `LocalSocket` to send the TUN file descriptor to `tun2socks`.
+5. **Core**: `V2RayCoreManager` (via `libv2ray`) starts the V2Ray process with the JSON config.
+6. **Routing**: Traffic: TUN (172.19.0.1) -> `tun2socks` -> V2Ray SOCKS (10808) -> Remote.
 
-### How Proxy Mode Works (Step-by-Step)
+### How it Works: macOS (System Proxy)
 
-1. User switches mode by toggling "Proxy-Only Mode" in settings
-2. Flutter calls startProxyOnly() on V2RayService
-3. V2RayProxyOnlyService is launched
-4. V2Ray core is configured with local SOCKS5 (10808) and HTTP (10809) inbounds
-5. No VPN is required—there's no TUN interface and no routing changes
-6. User manually configures apps to use localhost:10808 or localhost:10809
-7. Traffic flows from configured apps sending requests to localhost:10808, V2Ray encrypts and proxies traffic, and the remote server handles the request
-8. The built-in WebView browser automatically uses the proxy when active
+1. **Binary Detection**: Swift searches for bundled `v2ray` or system `v2ray/xray` (Homebrew/local).
+2. **Execution**: Swift spawns the V2Ray process directly using `Process()` with `--run -c [config]`.
+3. **Device Mapping**: Identifies primary interface (e.g., "Wi-Fi") using `route get default` and `networksetup`.
+4. **Proxy Setup**: Direct calls to `networksetup` (via `osascript` or `sudo` + Touch ID) set system-wide SOCKS/HTTP/HTTPS proxies.
+5. **Bidirectional Logs**: Both platforms pipe process stdout/stderr back to Dart via dedicated MethodChannels.
 
 ---
 
