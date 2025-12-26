@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
 import 'theme/app_theme.dart';
 import 'screens/home_screen.dart';
 import 'services/v2ray_service.dart';
@@ -10,17 +12,35 @@ late V2RayService _globalV2RayService;
 late LoggerService _logger;
 
 void main() {
-  // Catch async errors - logic must be inside the zone to match binding initialization
+  // Catch async errors
   runZonedGuarded(
-    () {
-      // Ensure Flutter binding is initialized inside the zone
+    () async {
       WidgetsFlutterBinding.ensureInitialized();
 
-      // Initialize services
+      // Initialize Services
       _globalV2RayService = V2RayService();
       _logger = LoggerService();
 
-      // Setup error handling to disconnect VPN on crashes
+      // Desktop Window Configuration
+      if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+        await windowManager.ensureInitialized();
+        
+        WindowOptions windowOptions = const WindowOptions(
+          size: Size(500, 700),
+          minimumSize: Size(400, 500),
+          center: true,
+          backgroundColor: Colors.transparent,
+          skipTaskbar: false,
+          titleBarStyle: TitleBarStyle.normal,
+        );
+        
+        windowManager.waitUntilReadyToShow(windowOptions, () async {
+          await windowManager.show();
+          await windowManager.focus();
+        });
+      }
+
+      // Setup error handling
       FlutterError.onError = (FlutterErrorDetails details) {
         _logger.error('Flutter Error: ${details.exception}', stackTrace: details.stack);
         _disconnectOnCrash();
@@ -30,10 +50,6 @@ void main() {
       runApp(const V2RayApp());
     },
     (error, stackTrace) {
-      // We might need to initialize logger here if it wasn't initialized yet,
-      // but since we moved it inside, we should be careful.
-      // Ideally logging service uses a static instance or simplistic print if not ready.
-      // But _logger is late, so we check if initialized or use print fallback.
       try {
         _logger.error('Uncaught error: $error', stackTrace: stackTrace);
       } catch (e) {
