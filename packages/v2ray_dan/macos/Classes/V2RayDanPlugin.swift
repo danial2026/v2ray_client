@@ -3,6 +3,7 @@ import FlutterMacOS
 import Foundation
 import LocalAuthentication
 import Security
+import Vision
 
 public class V2RayDanPlugin: NSObject, FlutterPlugin {
   private var eventSink: FlutterEventSink?
@@ -58,6 +59,9 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
       
     case "clearSystemProxy":
       clearSystemProxy(result: result)
+      
+    case "decodeQR":
+      decodeQR(call: call, result: result)
       
     default:
       log("Method not implemented: \(call.method)")
@@ -782,6 +786,113 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
     // Keep only last 100 logs
     if logs.count > 100 {
       logs.removeFirst(logs.count - 100)
+    }
+  }
+  // MARK: - QR Code Decode
+  private func decodeQR(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any],
+          let path = args["path"] as? String else {
+      log("decodeQR: missing path argument")
+      result(FlutterError(code: "INVALID_ARGS", message: "Missing path argument", details: nil))
+      return
+    }
+    
+    log("decodeQR: path=\(path)")
+    
+    let fileURL = URL(fileURLWithPath: path)
+    let fileExists = FileManager.default.fileExists(atPath: path)
+    log("decodeQR: file exists = \(fileExists)")
+    
+    guard let imageData = try? Data(contentsOf: fileURL) else {
+      log("decodeQR: FAILED to read file data, path=\(path)")
+      result(FlutterError(code: "LOAD_ERROR", message: "Could not read file at: \(path)", details: nil))
+      return
+    }
+    
+    log("decodeQR: read \(imageData.count) bytes")
+    
+    guard let imageSource = CGImageSourceCreateWithData(imageData as CFData, nil) else {
+      log("decodeQR: FAILED to create CGImageSource from data")
+      result(FlutterError(code: "LOAD_ERROR", message: "Could not decode image data", details: nil))
+      return
+    }
+    
+    let imageType = CGImageSourceGetType(imageSource) as String? ?? "unknown"
+    log("decodeQR: image type = \(imageType)")
+    
+    guard let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+      log("decodeQR: FAILED to create CGImage from source")
+      result(FlutterError(code: "LOAD_ERROR", message: "Could not create CGImage", details: nil))
+      return
+    }
+    
+    log("decodeQR: CGImage created, size=\(cgImage.width)x\(cgImage.height)")
+    
+    let orientation = CGImagePropertyOrientation(imageSource)
+    log("decodeQR: orientation = \(orientation.rawValue)")
+    
+    let ciImage = CIImage(cgImage: cgImage).oriented(orientation)
+    log("decodeQR: starting Vision barcode detection...")
+    
+    let request = VNDetectBarcodesRequest { (request, error) in
+      if let error = error {
+        DispatchQueue.main.async {
+          self.log("decodeQR: Vision error = \(error.localizedDescription)")
+          result(FlutterError(code: "DETECT_ERROR", message: error.localizedDescription, details: nil))
+        }
+        return
+      }
+      
+      guard let observations = request.results as? [VNBarcodeObservation] else {
+        DispatchQueue.main.async {
+          self.log("decodeQR: no VNBarcodeObservation results")
+          result(nil)
+        }
+        return
+      }
+      
+      DispatchQueue.main.async {
+        self.log("decodeQR: found \(observations.count) barcode(s)")
+        for (i, obs) in observations.enumerated() {
+          self.log("decodeQR: barcode[\(i)] type=\(obs.symbology.rawValue) payload=\(obs.payloadStringValue ?? "nil")")
+        }
+        
+        for observation in observations {
+          if observation.symbology == .qr, let payload = observation.payloadStringValue, !payload.isEmpty {
+            self.log("decodeQR: SUCCESS payload=\(payload)")
+            result(payload)
+            return
+          }
+        }
+        
+        self.log("decodeQR: no QR code found in \(observations.count) barcode(s)")
+        result(nil)
+      }
+    }
+    
+    request.symbologies = [.qr]
+    
+    let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
+    DispatchQueue.global(qos: .userInitiated).async {
+      do {
+        try handler.perform([request])
+      } catch {
+        DispatchQueue.main.async {
+          self.log("decodeQR: handler.perform error = \(error.localizedDescription)")
+          result(FlutterError(code: "HANDLER_ERROR", message: error.localizedDescription, details: nil))
+        }
+      }
+    }
+  }
+}
+
+extension CGImagePropertyOrientation {
+  init(_ source: CGImageSource) {
+    if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+       let exifOrientation = properties[kCGImagePropertyOrientation as String] as? UInt32 {
+      self = CGImagePropertyOrientation(rawValue: exifOrientation) ?? .up
+    } else {
+      self = .up
     }
   }
 }

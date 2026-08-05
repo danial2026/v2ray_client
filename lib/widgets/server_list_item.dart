@@ -12,6 +12,7 @@ class ServerListItem extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback? onShare;
   final bool censorAddress;
+  final String? subscriptionName;
 
   const ServerListItem({
     super.key,
@@ -23,6 +24,7 @@ class ServerListItem extends StatelessWidget {
     required this.onDelete,
     this.onShare,
     this.censorAddress = false,
+    this.subscriptionName,
   });
 
   @override
@@ -57,13 +59,24 @@ class ServerListItem extends StatelessWidget {
                   children: [
                     Text(
                       server.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 15,
                         fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                         color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.9),
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    if (subscriptionName != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subscriptionName!,
+                        style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.25), letterSpacing: 0.5),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    const SizedBox(height: 2),
                     Text(
                       censorAddress 
                           ? '${server.protocol.toUpperCase()} • ${_censorString(server.address)}'

@@ -5,6 +5,7 @@ import '../models/ping_settings.dart';
 import '../models/ping_result.dart';
 import '../models/dns_preset.dart';
 import '../models/proxy_mode.dart';
+import '../models/subscription.dart';
 
 class StorageService {
   static const String _serversKey = 'v2ray_servers';
@@ -20,6 +21,10 @@ class StorageService {
   static const String _censorAddressesKey = 'censor_addresses';
   static const String _urlHistoryKey = 'url_history';
   static const String _proxyModeKey = 'proxy_mode';
+  static const String _socksPortKey = 'socks_port';
+  static const String _httpPortKey = 'http_port';
+  static const String _subscriptionsKey = 'subscriptions';
+  static const String _setSystemProxyKey = 'set_system_proxy';
 
   final SharedPreferences _prefs;
 
@@ -55,7 +60,64 @@ class StorageService {
     if (jsonString == null) return [];
 
     final List<dynamic> jsonList = json.decode(jsonString);
-    return jsonList.map((json) => V2RayServer.fromJson(json)).toList();
+    final servers = jsonList.map((json) => V2RayServer.fromJson(json)).toList();
+
+    final (fixed, remap) = _fixDuplicateServerIds(servers);
+    if (fixed != null) {
+      _updateSubscriptionRefs(remap);
+      final fixedJson = fixed.map((s) => s.toJson()).toList();
+      _prefs.setString(_serversKey, json.encode(fixedJson));
+      return fixed;
+    }
+    return servers;
+  }
+
+  (List<V2RayServer>?, Map<String, List<String>>) _fixDuplicateServerIds(List<V2RayServer> servers) {
+    final seen = <String>{};
+    var hasDupes = false;
+    for (final s in servers) {
+      if (seen.contains(s.id)) { hasDupes = true; break; }
+      seen.add(s.id);
+    }
+    if (!hasDupes) return (null, {});
+
+    final counter = DateTime.now().millisecondsSinceEpoch;
+    final remap = <String, List<String>>{};
+    final used = <String>{};
+    final fixed = <V2RayServer>[];
+
+    for (var i = 0; i < servers.length; i++) {
+      final s = servers[i];
+      if (used.contains(s.id)) {
+        final newId = '${s.id}_$counter$i';
+        remap.putIfAbsent(s.id, () => []).add(newId);
+        fixed.add(V2RayServer(id: newId, name: s.name, address: s.address, port: s.port, uuid: s.uuid, protocol: s.protocol, alterId: s.alterId, network: s.network, type: s.type, host: s.host, path: s.path, tls: s.tls, security: s.security, encryption: s.encryption, flow: s.flow, sni: s.sni, alpn: s.alpn, fingerprint: s.fingerprint, publicKey: s.publicKey, shortId: s.shortId, spiderX: s.spiderX, subscriptionId: s.subscriptionId));
+      } else {
+        used.add(s.id);
+        fixed.add(s);
+      }
+    }
+    return (fixed, remap);
+  }
+
+  void _updateSubscriptionRefs(Map<String, List<String>> remap) {
+    if (remap.isEmpty) return;
+    final subs = loadSubscriptions();
+    for (final sub in subs) {
+      final newIds = <String>[];
+      for (final id in sub.serverIds) {
+        if (remap.containsKey(id)) {
+          newIds.add(id); // keep the original (first occurrence)
+          newIds.addAll(remap[id]!); // add all remapped duplicates
+        } else {
+          newIds.add(id);
+        }
+      }
+      sub.serverIds
+        ..clear()
+        ..addAll(newIds);
+    }
+    saveSubscriptions(subs);
   }
 
   Future<void> addServer(V2RayServer server) async {
@@ -76,6 +138,18 @@ class StorageService {
   Future<void> removeServer(String serverId) async {
     final servers = loadServers();
     servers.removeWhere((s) => s.id == serverId);
+    await saveServers(servers);
+  }
+
+  Future<void> removeServers(List<String> serverIds) async {
+    final servers = loadServers();
+    servers.removeWhere((s) => serverIds.contains(s.id));
+    await saveServers(servers);
+  }
+
+  Future<void> removeServersBySubscriptionId(String subId) async {
+    final servers = loadServers();
+    servers.removeWhere((s) => s.subscriptionId == subId);
     await saveServers(servers);
   }
 
@@ -195,6 +269,98 @@ class StorageService {
     final modeStr = _prefs.getString(_proxyModeKey);
     if (modeStr == null) return ProxyMode.defaultMode;
     return ProxyMode.fromJson(modeStr);
+  }
+
+  // Custom port operations
+  Future<void> saveSocksPort(int port) async {
+    await _prefs.setInt(_socksPortKey, port);
+  }
+
+  int loadSocksPort() {
+    return _prefs.getInt(_socksPortKey) ?? 10808;
+  }
+
+  Future<void> saveHttpPort(int port) async {
+    await _prefs.setInt(_httpPortKey, port);
+  }
+
+  int loadHttpPort() {
+    return _prefs.getInt(_httpPortKey) ?? 10809;
+  }
+
+  // Subscription operations
+  Future<void> saveSubscriptions(List<Subscription> subscriptions) async {
+    final jsonList = subscriptions.map((s) => s.toJson()).toList();
+    await _prefs.setString(_subscriptionsKey, json.encode(jsonList));
+  }
+
+  List<Subscription> loadSubscriptions() {
+    final jsonString = _prefs.getString(_subscriptionsKey);
+    if (jsonString == null) return [];
+
+    final List<dynamic> jsonList = json.decode(jsonString);
+    return jsonList.map((j) => Subscription.fromJson(j)).toList();
+  }
+
+  Future<void> addSubscription(Subscription subscription) async {
+    final subs = loadSubscriptions();
+    subs.add(subscription);
+    await saveSubscriptions(subs);
+  }
+
+  Future<void> updateSubscription(Subscription subscription) async {
+    final subs = loadSubscriptions();
+    final index = subs.indexWhere((s) => s.id == subscription.id);
+    if (index != -1) {
+      subs[index] = subscription;
+      await saveSubscriptions(subs);
+    }
+  }
+
+  Future<void> removeSubscription(String id) async {
+    final subs = loadSubscriptions();
+    subs.removeWhere((s) => s.id == id);
+    await saveSubscriptions(subs);
+  }
+
+  // Duplicate detection
+  List<List<V2RayServer>> findDuplicates() {
+    final servers = loadServers();
+    final seen = <String, List<V2RayServer>>{};
+
+    for (final server in servers) {
+      final key = '${server.address}:${server.port}:${server.uuid}';
+      seen.putIfAbsent(key, () => []);
+      seen[key]!.add(server);
+    }
+
+    return seen.values.where((list) => list.length > 1).toList();
+  }
+
+  Future<void> removeDuplicateServers() async {
+    final duplicates = findDuplicates();
+    if (duplicates.isEmpty) return;
+
+    final servers = loadServers();
+    final toRemoveIds = <String>{};
+
+    for (final group in duplicates) {
+      for (int i = 1; i < group.length; i++) {
+        toRemoveIds.add(group[i].id);
+      }
+    }
+
+    servers.removeWhere((s) => toRemoveIds.contains(s.id));
+    await saveServers(servers);
+  }
+
+  // System proxy toggle
+  Future<void> saveSetSystemProxy(bool value) async {
+    await _prefs.setBool(_setSystemProxyKey, value);
+  }
+
+  bool loadSetSystemProxy() {
+    return _prefs.getBool(_setSystemProxyKey) ?? true;
   }
 
   // Clear all data

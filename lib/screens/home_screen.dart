@@ -14,9 +14,12 @@ import '../services/ip_info_service.dart';
 import '../models/ping_settings.dart';
 import '../widgets/server_list_item.dart';
 import '../widgets/connection_toggle.dart';
-import '../widgets/ping_button.dart';
+import '../widgets/qr_share_dialog.dart';
+import '../widgets/qr_scanner_screen.dart';
 import 'add_server_screen.dart';
 import 'ping_settings_screen.dart';
+import 'subscriptions_screen.dart';
+import '../models/subscription.dart';
 import 'webview_screen.dart';
 import 'logs_page.dart';
 
@@ -51,6 +54,10 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<VPNConnectionStatus>? _statusSubscription;
   StreamSubscription<UsageStats>? _statsSubscription;
   ProxyMode _proxyMode = ProxyMode.socks; // macOS proxy mode
+  int _socksPort = 10808;
+  int _httpPort = 10809;
+  bool _setSystemProxy = true;
+  Map<String, String> _subscriptionMap = {};
 
   @override
   void initState() {
@@ -131,8 +138,23 @@ class _HomeScreenState extends State<HomeScreen> {
       _useSystemDns = _storageService.loadUseSystemDns();
       _showUsageStats = _storageService.loadShowUsageStats();
       _censorAddresses = _storageService.loadCensorAddresses();
-      _proxyMode = _storageService.loadProxyMode(); // Load proxy mode for macOS
+      _proxyMode = _storageService.loadProxyMode();
+      _socksPort = _storageService.loadSocksPort();
+      _httpPort = _storageService.loadHttpPort();
+      _setSystemProxy = _storageService.loadSetSystemProxy();
+      _subscriptionMap = _buildSubscriptionMap();
     });
+  }
+
+  Map<String, String> _buildSubscriptionMap() {
+    final subs = _storageService.loadSubscriptions();
+    final map = <String, String>{};
+    for (final sub in subs) {
+      for (final id in sub.serverIds) {
+        map[id] = sub.name;
+      }
+    }
+    return map;
   }
 
   Future<void> _addServer() async {
@@ -200,7 +222,10 @@ class _HomeScreenState extends State<HomeScreen> {
           customDns: _customDns,
           proxyOnly: _proxyOnly,
           useSystemDns: _useSystemDns,
-          proxyMode: Platform.isMacOS ? _proxyMode : null, // Pass proxy mode on macOS
+          proxyMode: Platform.isMacOS ? _proxyMode : null,
+          socksPort: _socksPort,
+          httpPort: _httpPort,
+          applySystemProxy: _setSystemProxy,
         );
 
         if (mounted && !success) {
@@ -313,7 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
     switch (_v2rayService.status) {
       case VPNConnectionStatus.connected:
         if (_proxyOnly) {
-          return 'CONNECTED (Proxy Mode - localhost:10808)';
+          return 'CONNECTED (Proxy Mode - localhost:$_socksPort)';
         }
         return 'CONNECTED (VPN Mode - System-wide)';
       case VPNConnectionStatus.connecting:
@@ -360,6 +385,14 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () {
                 Navigator.pop(context);
                 _shareServerLink(server);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.qr_code_2),
+              title: const Text('Share QR Code'),
+              onTap: () {
+                Navigator.pop(context);
+                showQrShareDialog(context, server.toShareLink(), server.name);
               },
             ),
             ListTile(
@@ -455,7 +488,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     )
                   else
                     Text(
-                      _proxyOnly ? 'PROXY LOCALHOST:10808' : 'SYSTEM TUNNEL',
+                      _proxyOnly ? 'PROXY LOCALHOST:$_socksPort' : 'SYSTEM TUNNEL',
                       style: TextStyle(
                         fontSize: 10,
                         letterSpacing: 1,
@@ -478,17 +511,16 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
-          PingButton(isPinging: _isPinging, completedCount: _pingCompleted, totalCount: _pingTotal, onPressed: _pingAllServers),
-          IconButton(icon: const Icon(Icons.tune, size: 20), onPressed: _openPingSettings, tooltip: 'Ping Settings'),
-          IconButton(icon: const Icon(Icons.description_outlined, size: 20), onPressed: _openLogsPage, tooltip: 'View Logs'),
-          IconButton(icon: const Icon(Icons.public, size: 20), onPressed: _openWebView, tooltip: 'Open Browser'),
+          IconButton(icon: const Icon(Icons.subscriptions_outlined, size: 20), onPressed: _openSubscriptions, tooltip: 'Subscriptions'),
+          IconButton(icon: const Icon(Icons.tune, size: 20), onPressed: _openPingSettings, tooltip: 'Settings'),
+          IconButton(icon: const Icon(Icons.public, size: 20), onPressed: _openWebView, tooltip: 'Browser'),
+          _buildMenuPopup(),
         ],
       ),
       body: Column(
         children: [
-          // Show toggle on Android, proxy mode selector on macOS
           if (Platform.isAndroid) _buildProxyToggle(),
-          if (Platform.isMacOS) _buildMacOSProxyModeSelector(),
+          if (Platform.isMacOS) ..._buildMacOSProxySettings(),
           Expanded(child: _buildServerList()),
         ],
       ),
@@ -556,6 +588,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onLongPress: () => _showServerActions(server),
           onDelete: () => _deleteServer(server.id),
           censorAddress: _censorAddresses,
+          subscriptionName: _subscriptionMap[server.id],
         );
       },
     );
@@ -601,6 +634,13 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
+  }
+
+  List<Widget> _buildMacOSProxySettings() {
+    return [
+      _buildProxyToggle(),
+      _buildMacOSProxyModeSelector(),
+    ];
   }
 
   Widget _buildMacOSProxyModeSelector() {
@@ -669,6 +709,178 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  void _openQrScanner() async {
+    final result = await Navigator.push<V2RayServer>(
+      context,
+      MaterialPageRoute(builder: (context) => const QrScannerScreen()),
+    );
+    if (result != null) {
+      await _storageService.addServer(result);
+      _loadData();
+    }
+  }
+
+  void _openSubscriptions() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const SubscriptionsScreen()),
+    );
+    _loadData();
+  }
+
+  Future<void> _deleteDuplicates() async {
+    final duplicates = _storageService.findDuplicates();
+    if (duplicates.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No duplicates found'), behavior: SnackBarBehavior.floating),
+        );
+      }
+      return;
+    }
+
+    final totalDupes = duplicates.fold<int>(0, (sum, group) => sum + group.length - 1);
+
+    if (!mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.surfaceColor,
+        title: const Text('Duplicate Servers Found'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ...duplicates.map((group) {
+                final first = group.first;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Icon(Icons.copy_all, size: 14, color: Colors.white.withValues(alpha: 0.5)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${first.name} (${group.length}x)',
+                          style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.7)),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 12),
+              Text(
+                'Keep one copy of each, delete $totalDupes duplicate(s)?',
+                style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.5)),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorColor),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete Duplicates'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _storageService.removeDuplicateServers();
+      _loadData();
+    }
+  }
+
+  Widget _buildMenuPopup() {
+    return IconButton(
+      icon: const Icon(Icons.more_horiz, size: 20),
+      onPressed: () {
+        showMenu<String>(
+          context: context,
+          color: AppTheme.surfaceColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          position: const RelativeRect.fromLTRB(1000, 80, 0, 0),
+          items: [
+            PopupMenuItem<String>(
+              value: 'ping',
+              child: StatefulBuilder(
+                builder: (context, setLocalState) {
+                  return Row(
+                    children: [
+                      Icon(Icons.speed, size: 18, color: Colors.white),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _isPinging ? 'Pinging $_pingCompleted/$_pingTotal...' : 'Ping All Servers',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+            const PopupMenuItem<String>(
+              value: 'scan',
+              child: Row(
+                children: [
+                  Icon(Icons.qr_code_scanner, size: 18),
+                  SizedBox(width: 12),
+                  Text('Scan QR Code', style: TextStyle(fontSize: 13)),
+                ],
+              ),
+            ),
+            const PopupMenuItem<String>(
+              value: 'logs',
+              child: Row(
+                children: [
+                  Icon(Icons.description_outlined, size: 18),
+                  SizedBox(width: 12),
+                  Text('View Logs', style: TextStyle(fontSize: 13)),
+                ],
+              ),
+            ),
+            const PopupMenuDivider(),
+            const PopupMenuItem<String>(
+              value: 'duplicates',
+              child: Row(
+                children: [
+                  Icon(Icons.merge_type_outlined, size: 18),
+                  SizedBox(width: 12),
+                  Text('Delete Duplicates', style: TextStyle(fontSize: 13)),
+                ],
+              ),
+            ),
+          ],
+        ).then((value) {
+          if (value == null) return;
+          switch (value) {
+            case 'ping':
+              _pingAllServers();
+              break;
+            case 'scan':
+              _openQrScanner();
+              break;
+            case 'logs':
+              _openLogsPage();
+              break;
+            case 'duplicates':
+              _deleteDuplicates();
+              break;
+          }
+        });
+      },
     );
   }
 

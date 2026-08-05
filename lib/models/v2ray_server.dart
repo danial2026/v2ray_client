@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'package:uuid/uuid.dart';
 
 class V2RayServer {
+  static int _idCounter = DateTime.now().millisecondsSinceEpoch;
+
   final String id;
   final String name;
   final String address;
@@ -22,6 +25,7 @@ class V2RayServer {
   final String? publicKey; // For Reality
   final String? shortId; // For Reality
   final String? spiderX; // For Reality
+  final String? subscriptionId; // Tag servers from a subscription
 
   V2RayServer({
     required this.id,
@@ -45,6 +49,7 @@ class V2RayServer {
     this.publicKey,
     this.shortId,
     this.spiderX,
+    this.subscriptionId,
   });
 
   // Parse from any supported link
@@ -88,7 +93,7 @@ class V2RayServer {
       final jsonData = json.decode(jsonString) as Map<String, dynamic>;
 
       // Generate unique ID
-      final id = DateTime.now().millisecondsSinceEpoch.toString();
+      final id = '${const Uuid().v4()}_${++_idCounter}';
 
       final name = jsonData['ps'] as String? ?? 'Server $id';
       final address = jsonData['add'] as String?;
@@ -190,6 +195,7 @@ class V2RayServer {
       'publicKey': publicKey,
       'shortId': shortId,
       'spiderX': spiderX,
+      'subscriptionId': subscriptionId,
     };
   }
 
@@ -217,6 +223,7 @@ class V2RayServer {
       publicKey: json['publicKey'] as String?,
       shortId: json['shortId'] as String?,
       spiderX: json['spiderX'] as String?,
+      subscriptionId: json['subscriptionId'] as String?,
     );
   }
 

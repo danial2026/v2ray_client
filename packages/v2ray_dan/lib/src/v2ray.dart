@@ -101,6 +101,19 @@ class V2ray {
     }
   }
 
+  Future<String?> decodeQR(String imagePath) async {
+    try {
+      final String? result = await _channel.invokeMethod('decodeQR', {'path': imagePath});
+      return result;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  void dispose() {
+    // Clean up resources if needed
+  }
+
   static V2RayURL parseFromURL(String url) {
     return V2RayURL(url);
   }

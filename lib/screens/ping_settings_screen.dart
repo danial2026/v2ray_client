@@ -27,6 +27,9 @@ class _PingSettingsScreenState extends State<PingSettingsScreen> {
   late bool _autoPingEnabled;
   late bool _showUsageStats;
   late bool _censorAddresses;
+  int _socksPort = 10808;
+  int _httpPort = 10809;
+  bool _setSystemProxy = true;
   PackageInfo _packageInfo = PackageInfo(
     appName: 'Unknown',
     packageName: 'Unknown',
@@ -36,6 +39,8 @@ class _PingSettingsScreenState extends State<PingSettingsScreen> {
     installerStore: 'Unknown',
   );
   final TextEditingController _dnsController = TextEditingController();
+  final TextEditingController _socksPortController = TextEditingController(text: '10808');
+  final TextEditingController _httpPortController = TextEditingController(text: '10809');
 
   List<DnsPreset> _dnsPresets = [];
 
@@ -73,6 +78,11 @@ class _PingSettingsScreenState extends State<PingSettingsScreen> {
       _autoPingEnabled = storage.loadAutoPingEnabled();
       _showUsageStats = storage.loadShowUsageStats();
       _censorAddresses = storage.loadCensorAddresses();
+      _socksPort = storage.loadSocksPort();
+      _httpPort = storage.loadHttpPort();
+      _socksPortController.text = _socksPort.toString();
+      _httpPortController.text = _httpPort.toString();
+      _setSystemProxy = storage.loadSetSystemProxy();
       _dnsPresets = presets.isEmpty ? _defaultPresets : presets;
     });
 
@@ -89,6 +99,9 @@ class _PingSettingsScreenState extends State<PingSettingsScreen> {
     await storage.saveAutoPingEnabled(_autoPingEnabled);
     await storage.saveShowUsageStats(_showUsageStats);
     await storage.saveCensorAddresses(_censorAddresses);
+    await storage.saveSocksPort(_socksPort);
+    await storage.saveHttpPort(_httpPort);
+    await storage.saveSetSystemProxy(_setSystemProxy);
     await storage.saveDnsPresets(_dnsPresets);
 
     final settings = PingSettings(
@@ -256,6 +269,13 @@ class _PingSettingsScreenState extends State<PingSettingsScreen> {
             _buildUsageStatsToggle(),
             const SizedBox(height: 16),
             _buildCensorToggle(),
+            
+            const SizedBox(height: 32),
+            _buildSectionHeader('PROXY PORTS'),
+            const SizedBox(height: 24),
+            _buildProxyPortsSection(),
+            const SizedBox(height: 16),
+            _buildSystemProxyToggle(),
             
             const SizedBox(height: 48),
             SizedBox(
@@ -767,9 +787,90 @@ class _PingSettingsScreenState extends State<PingSettingsScreen> {
     );
   }
 
+  Widget _buildProxyPortsSection() {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _socksPortController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'SOCKS5 Port',
+                  hintText: '10808',
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+                onChanged: (value) {
+                  final port = int.tryParse(value);
+                  if (port != null && port > 0 && port <= 65535) {
+                    setState(() => _socksPort = port);
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: TextField(
+                controller: _httpPortController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'HTTP Port',
+                  hintText: '10809',
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+                onChanged: (value) {
+                  final port = int.tryParse(value);
+                  if (port != null && port > 0 && port <= 65535) {
+                    setState(() => _httpPort = port);
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSystemProxyToggle() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.settings_ethernet, size: 18, color: Colors.white.withValues(alpha: 0.5)),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('SET SYSTEM PROXY', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                  Text('Apply proxy to macOS network settings', style: TextStyle(fontSize: 8, color: Colors.white.withValues(alpha: 0.3))),
+                ],
+              ),
+            ],
+          ),
+          Switch(
+            value: _setSystemProxy,
+            onChanged: (value) => setState(() => _setSystemProxy = value),
+            activeThumbColor: AppTheme.accentColor,
+            activeTrackColor: AppTheme.accentColor.withValues(alpha: 0.2),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _dnsController.dispose();
+    _socksPortController.dispose();
+    _httpPortController.dispose();
     super.dispose();
   }
 }

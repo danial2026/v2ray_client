@@ -2,6 +2,7 @@ package com.v2ray.dan
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -186,6 +187,38 @@ class V2RayDanPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, PluginReg
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
             result.success(true)
+        } catch (e: Exception) {
+            result.error("ERROR", e.message, null)
+        }
+        
+    } else if (call.method == "decodeQR") {
+        val path = call.argument<String>("path")
+        if (path == null) {
+            result.error("INVALID_ARGS", "Missing path", null)
+            return
+        }
+        try {
+            val bitmap = BitmapFactory.decodeFile(path)
+            if (bitmap == null) {
+                result.error("LOAD_ERROR", "Could not decode image", null)
+                return
+            }
+            val scanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient()
+            val image = com.google.mlkit.vision.common.InputImage.fromBitmap(bitmap, 0)
+            scanner.process(image)
+                .addOnSuccessListener { barcodes ->
+                    for (bc in barcodes) {
+                        val payload = bc.displayValue ?: bc.rawValue
+                        if (!payload.isNullOrEmpty()) {
+                            result.success(payload)
+                            return@addOnSuccessListener
+                        }
+                    }
+                    result.success(null)
+                }
+                .addOnFailureListener { e ->
+                    result.error("DETECT_ERROR", e.message, null)
+                }
         } catch (e: Exception) {
             result.error("ERROR", e.message, null)
         }

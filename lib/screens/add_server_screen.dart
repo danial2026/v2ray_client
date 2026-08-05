@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../models/v2ray_server.dart';
 import '../theme/app_theme.dart';
+import '../widgets/qr_scanner_screen.dart';
 
 class AddServerScreen extends StatefulWidget {
   final V2RayServer? server;
@@ -74,6 +75,16 @@ class _AddServerScreenState extends State<AddServerScreen> {
     }
   }
 
+  Future<void> _scanQr() async {
+    final result = await Navigator.push<V2RayServer>(
+      context,
+      MaterialPageRoute(builder: (context) => const QrScannerScreen()),
+    );
+    if (result != null) {
+      Navigator.pop(context, result);
+    }
+  }
+
   void _saveManualServer() {
     if (_formKey.currentState!.validate()) {
       final server = V2RayServer(
@@ -124,9 +135,28 @@ class _AddServerScreenState extends State<AddServerScreen> {
                     ),
                   ),
                 const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(onPressed: _importFromLink, child: const Text('AUTO IMPORT')),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 48,
+                        child: ElevatedButton.icon(
+                          onPressed: _importFromLink,
+                          icon: const Icon(Icons.link, size: 16),
+                          label: const Text('AUTO IMPORT'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        onPressed: _scanQr,
+                        icon: const Icon(Icons.qr_code_scanner, size: 16),
+                        label: const Text('SCAN QR'),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 32),
                 Center(

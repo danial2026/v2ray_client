@@ -26,6 +26,7 @@ class V2RayService {
   Timer? _logPollingTimer;
   bool _isConnectInProgress = false;
   ProxyMode _proxyMode = ProxyMode.socks; // Default to SOCKS
+  bool _systemProxyWasSet = false;
 
   VPNConnectionStatus get status => _status;
   V2RayServer? get currentServer => _currentServer;
@@ -212,11 +213,15 @@ class V2RayService {
     bool proxyOnly = false,
     bool useSystemDns = true,
     ProxyMode? proxyMode,
+    int socksPort = 10808,
+    int httpPort = 10809,
+    bool applySystemProxy = true,
   }) async {
     _logger.info('========== Starting connection process ==========');
     _logger.info('Mode: ${proxyOnly ? "Proxy Only" : "VPN (System-wide)"}');
     _logger.info('Server: ${server.name} (${server.address}:${server.port})');
     _logger.info('Protocol: ${server.protocol}');
+    _logger.info('Ports: SOCKS=$socksPort, HTTP=$httpPort');
 
     // Set proxy mode (with default)
     _proxyMode = proxyMode ?? ProxyMode.socks;
@@ -232,7 +237,7 @@ class V2RayService {
 
     try {
       // Use a slightly longer timeout to prevent premature "stuck" declarations
-      return await _runConnectLogic(server, customDns, proxyOnly, useSystemDns).timeout(
+      return await _runConnectLogic(server, customDns, proxyOnly, useSystemDns, socksPort, httpPort, applySystemProxy).timeout(
         const Duration(seconds: 45), // Increased timeout to allow for macOS admin prompt interaction
         onTimeout: () {
           _logger.error('Connection logic timed out after 45 seconds');
@@ -264,7 +269,7 @@ class V2RayService {
     }
   }
 
-  Future<bool> _runConnectLogic(V2RayServer server, String? customDns, bool proxyOnly, bool useSystemDns) async {
+  Future<bool> _runConnectLogic(V2RayServer server, String? customDns, bool proxyOnly, bool useSystemDns, int socksPort, int httpPort, bool applySystemProxy) async {
     // Guard against concurrent connection attempts
     if (_isConnectInProgress) {
       throw Exception('Connection already in progress, please wait');
@@ -272,13 +277,13 @@ class V2RayService {
     _isConnectInProgress = true;
     
     try {
-      return await _runConnectLogicInternal(server, customDns, proxyOnly, useSystemDns);
+      return await _runConnectLogicInternal(server, customDns, proxyOnly, useSystemDns, socksPort, httpPort, applySystemProxy);
     } finally {
       _isConnectInProgress = false;
     }
   }
 
-  Future<bool> _runConnectLogicInternal(V2RayServer server, String? customDns, bool proxyOnly, bool useSystemDns) async {
+  Future<bool> _runConnectLogicInternal(V2RayServer server, String? customDns, bool proxyOnly, bool useSystemDns, int socksPort, int httpPort, bool applySystemProxy) async {
     // Step 1: Force reset existing connections
     _logger.info('Ensuring previous connections are closed...');
     try {
@@ -327,7 +332,7 @@ class V2RayService {
       config['inbounds'] = [
         {
           'tag': 'socks',
-          'port': 10808,
+          'port': socksPort,
           'listen': '127.0.0.1',
           'protocol': 'socks',
           'sniffing': {
@@ -338,7 +343,7 @@ class V2RayService {
         },
         {
           'tag': 'http',
-          'port': 10809,
+          'port': httpPort,
           'listen': '127.0.0.1',
           'protocol': 'http',
           'sniffing': {
@@ -374,7 +379,7 @@ class V2RayService {
       fullConfig['inbounds'] = [
         {
           "tag": "socks-in",
-          "port": 10808,
+          "port": socksPort,
           "listen": "127.0.0.1",
           "protocol": "socks",
           "sniffing": {
@@ -385,7 +390,7 @@ class V2RayService {
         },
         {
           "tag": "http-in",
-          "port": 10809,
+          "port": httpPort,
           "listen": "127.0.0.1",
           "protocol": "http",
           "sniffing": {
@@ -583,14 +588,18 @@ class V2RayService {
 
     if (proxyOnly) {
       _logger.info('Configure your apps to use:');
-      _logger.info('  - SOCKS5: 127.0.0.1:10808');
-      _logger.info('  - HTTP: 127.0.0.1:10809');
+      _logger.info('  - SOCKS5: 127.0.0.1:$socksPort');
+      _logger.info('  - HTTP: 127.0.0.1:$httpPort');
     }
 
     // On macOS, automatically enable system proxy based on selected mode
-    if (Platform.isMacOS) {
+    // Skip system proxy when proxyOnly is true or applySystemProxy is false
+    if (Platform.isMacOS && !proxyOnly && applySystemProxy) {
       _logger.info('Enabling macOS system proxy (${_proxyMode.displayName} mode)...');
       await setSystemProxy(_proxyMode);
+      _systemProxyWasSet = true;
+    } else {
+      _systemProxyWasSet = false;
     }
 
     // POST-CONNECTION DIAGNOSTICS
@@ -634,9 +643,10 @@ class V2RayService {
         // Continue to cleanup state even if stop failed
       }
 
-      // On macOS, clear system proxy
-      if (Platform.isMacOS) {
+      // On macOS, clear system proxy if it was set
+      if (Platform.isMacOS && _systemProxyWasSet) {
         await clearSystemProxy();
+        _systemProxyWasSet = false;
       }
 
       // Increased delay to allow network stack to fully reset
