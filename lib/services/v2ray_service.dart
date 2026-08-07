@@ -595,8 +595,10 @@ class V2RayService {
     // On macOS, automatically enable system proxy based on selected mode
     // Skip system proxy when proxyOnly is true or applySystemProxy is false
     if (Platform.isMacOS && !proxyOnly && applySystemProxy) {
-      _logger.info('Enabling macOS system proxy (${_proxyMode.displayName} mode)...');
-      await setSystemProxy(_proxyMode);
+      // VPN mode on macOS = system-wide routing. Browsers only honor the
+      // HTTP/HTTPS system proxy, so always enable both HTTP and SOCKS.
+      _logger.info('Enabling macOS system proxy (VPN mode - both)...');
+      await setSystemProxy(ProxyMode.both, socksPort: socksPort, httpPort: httpPort);
       _systemProxyWasSet = true;
     } else {
       _systemProxyWasSet = false;
@@ -691,19 +693,21 @@ class V2RayService {
   }
 
   // macOS System Proxy Control
-  Future<bool> setSystemProxy(ProxyMode mode) async {
+  Future<bool> setSystemProxy(ProxyMode mode, {int socksPort = 10808, int httpPort = 10809}) async {
     if (!Platform.isMacOS) {
       _logger.warning('System proxy control is only available on macOS');
       return false;
     }
 
     try {
-      _logger.info('Enabling macOS system proxy (${mode.displayName} mode)...');
+      _logger.info('Enabling macOS system proxy (${mode.displayName} mode, SOCKS=$socksPort, HTTP=$httpPort)...');
       
-      // Call native method with proxy mode argument
+      // Call native method with proxy mode and port arguments
       const platform = MethodChannel('v2ray_dan');
       final result = await platform.invokeMethod('setSystemProxy', {
         'proxyMode': mode.name,
+        'socksPort': socksPort,
+        'httpPort': httpPort,
       });
       
       if (result == true) {

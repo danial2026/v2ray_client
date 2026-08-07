@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.0.9] - 2026-08-07
+### Added
+- **Subscription Management**: Subscribe to server lists via URL with auto-import.
+- **QR Sharing & Scanning**: Quick server import/export via QR codes.
+- **Ping Settings**: Advanced latency threshold configuration screen.
+
+---
+
 ## [0.0.8] - 2025-12-25
 ### Added
 - **Circle Home Screen Widget**: New circular widget variant with connection status.

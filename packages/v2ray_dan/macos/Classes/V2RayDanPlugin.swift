@@ -506,27 +506,38 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
     
     // Extract proxy mode from arguments (default to "both" for backward compatibility)
     var proxyMode = "both"
-    if let args = call.arguments as? [String: Any], let mode = args["proxyMode"] as? String {
-      proxyMode = mode
+    var socksPort = 10808
+    var httpPort = 10809
+    if let args = call.arguments as? [String: Any] {
+      if let mode = args["proxyMode"] as? String {
+        proxyMode = mode
+      }
+      if let port = args["socksPort"] as? Int {
+        socksPort = port
+      }
+      if let port = args["httpPort"] as? Int {
+        httpPort = port
+      }
     }
-    
+
     log("Setting system proxy for interface: \(interface)")
     log("Proxy mode: \(proxyMode)")
+    log("Ports: SOCKS=\(socksPort), HTTP=\(httpPort)")
     
     var commands: [String] = []
     let safeInterface = "\"\(interface)\""
     
     // Configure HTTP/HTTPS
     if proxyMode == "http" || proxyMode == "both" {
-      commands.append("/usr/sbin/networksetup -setwebproxy \(safeInterface) 127.0.0.1 10809")
-      commands.append("/usr/sbin/networksetup -setsecurewebproxy \(safeInterface) 127.0.0.1 10809")
+      commands.append("/usr/sbin/networksetup -setwebproxy \(safeInterface) 127.0.0.1 \(httpPort)")
+      commands.append("/usr/sbin/networksetup -setsecurewebproxy \(safeInterface) 127.0.0.1 \(httpPort)")
       commands.append("/usr/sbin/networksetup -setwebproxystate \(safeInterface) on")
       commands.append("/usr/sbin/networksetup -setsecurewebproxystate \(safeInterface) on")
     }
     
     // Configure SOCKS
     if proxyMode == "socks" || proxyMode == "both" {
-      commands.append("/usr/sbin/networksetup -setsocksfirewallproxy \(safeInterface) 127.0.0.1 10808")
+      commands.append("/usr/sbin/networksetup -setsocksfirewallproxy \(safeInterface) 127.0.0.1 \(socksPort)")
       commands.append("/usr/sbin/networksetup -setsocksfirewallproxystate \(safeInterface) on")
     }
     

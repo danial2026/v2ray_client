@@ -185,6 +185,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _selectServer(String serverId) {
+    if (_v2rayService.status == VPNConnectionStatus.connected || _v2rayService.status == VPNConnectionStatus.connecting) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Disconnect before changing server'),
+            backgroundColor: AppTheme.accentColor,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+      return;
+    }
     setState(() {
       // If already selected, unselect it
       if (_selectedServerId == serverId) {
@@ -639,7 +652,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Widget> _buildMacOSProxySettings() {
     return [
       _buildProxyToggle(),
-      _buildMacOSProxyModeSelector(),
+      if (_proxyOnly) _buildMacOSProxyModeSelector(),
     ];
   }
 
