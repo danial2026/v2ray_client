@@ -91,7 +91,7 @@ class StorageService {
       if (used.contains(s.id)) {
         final newId = '${s.id}_$counter$i';
         remap.putIfAbsent(s.id, () => []).add(newId);
-        fixed.add(V2RayServer(id: newId, name: s.name, address: s.address, port: s.port, uuid: s.uuid, protocol: s.protocol, alterId: s.alterId, network: s.network, type: s.type, host: s.host, path: s.path, tls: s.tls, security: s.security, encryption: s.encryption, flow: s.flow, sni: s.sni, alpn: s.alpn, fingerprint: s.fingerprint, publicKey: s.publicKey, shortId: s.shortId, spiderX: s.spiderX, subscriptionId: s.subscriptionId));
+        fixed.add(V2RayServer(id: newId, name: s.name, address: s.address, port: s.port, uuid: s.uuid, protocol: s.protocol, alterId: s.alterId, network: s.network, type: s.type, host: s.host, path: s.path, tls: s.tls, security: s.security, encryption: s.encryption, flow: s.flow, sni: s.sni, alpn: s.alpn, fingerprint: s.fingerprint, publicKey: s.publicKey, shortId: s.shortId, spiderX: s.spiderX, subscriptionId: s.subscriptionId, createdAt: s.createdAt));
       } else {
         used.add(s.id);
         fixed.add(s);

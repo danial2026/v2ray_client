@@ -575,8 +575,8 @@ class V2RayService {
     _logger.info('Connection verification complete');
     _logger.info('Note: Monitor app logs and test actual traffic to confirm routing.');
 
-    // Update status to connected
-    if (_status != VPNConnectionStatus.connected) {
+    // Update status to connected (but don't overwrite an error from the plugin)
+    if (_status != VPNConnectionStatus.connected && _status != VPNConnectionStatus.error) {
       _logger.info('Updating status to CONNECTED');
       _status = VPNConnectionStatus.connected;
       _statusController.add(_status);
@@ -592,16 +592,17 @@ class V2RayService {
       _logger.info('  - HTTP: 127.0.0.1:$httpPort');
     }
 
-    // On macOS, automatically enable system proxy based on selected mode
-    // Skip system proxy when proxyOnly is true or applySystemProxy is false
-    if (Platform.isMacOS && !proxyOnly && applySystemProxy) {
-      // VPN mode on macOS = system-wide routing. Browsers only honor the
-      // HTTP/HTTPS system proxy, so always enable both HTTP and SOCKS.
-      _logger.info('Enabling macOS system proxy (VPN mode - both)...');
+    // On macOS, routing is handled by the native layer:
+    //  - VPN mode (proxyOnly=false): root-based TUN (utun + tun2socks), no system proxy needed
+    //  - Proxy-only mode: local SOCKS/HTTP on localhost, no system routing
+    // The applySystemProxy flag is exposed for explicit user override in proxy-only mode.
+    _systemProxyWasSet = false;
+    if (Platform.isMacOS && proxyOnly && applySystemProxy) {
+      _logger.info('Enabling macOS system proxy (proxy-only mode, user requested)...');
       await setSystemProxy(ProxyMode.both, socksPort: socksPort, httpPort: httpPort);
       _systemProxyWasSet = true;
-    } else {
-      _systemProxyWasSet = false;
+    } else if (Platform.isMacOS && !proxyOnly) {
+      _logger.info('macOS VPN mode: native TUN handles routing, skipping system proxy');
     }
 
     // POST-CONNECTION DIAGNOSTICS

@@ -12,6 +12,8 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
   private var logs: [String] = []
   private var configPath: String = ""
   private var v2rayBinaryPath: String?
+  private var tun2socksBinaryPath: String?
+  private var tunActive: Bool = false
   
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "v2ray_dan", binaryMessenger: registrar.messenger)
@@ -78,6 +80,7 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
     
     // Try to find v2ray binary
     findV2RayBinary()
+    findTUN2SocksBinary()
     
     result(filesDir)
   }
@@ -147,6 +150,247 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
     // ... (rest of "which" checks preserved or minimal)
     log("⚠️ V2Ray/XRay binary not found in bundle or system paths.")
   }
+
+  private func findTUN2SocksBinary() {
+    // 1. Bundled binary (Priority)
+    let bundle = Bundle(for: type(of: self))
+    if let bundledPath = bundle.path(forResource: "tun2socks", ofType: nil) {
+      if FileManager.default.isExecutableFile(atPath: bundledPath) {
+        tun2socksBinaryPath = bundledPath
+        log("✓ Found bundled tun2socks binary at: \(bundledPath)")
+        return
+      } else {
+        log("Found bundled tun2socks but not executable, copying to temp...")
+        let tempPath = NSTemporaryDirectory() + "tun2socks_exec"
+        do {
+          if FileManager.default.fileExists(atPath: tempPath) {
+            try FileManager.default.removeItem(atPath: tempPath)
+          }
+          try FileManager.default.copyItem(atPath: bundledPath, toPath: tempPath)
+          let chmod = Process()
+          chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
+          chmod.arguments = ["+x", tempPath]
+          try chmod.run()
+          chmod.waitUntilExit()
+          tun2socksBinaryPath = tempPath
+          log("✓ Using tun2socks executable at: \(tempPath)")
+          return
+        } catch {
+          log("Failed to prepare tun2socks binary: \(error)")
+        }
+      }
+    } else {
+      log("⚠️ Bundled 'tun2socks' not found in resources")
+    }
+
+    // 2. Common locations (Fallback)
+    let possiblePaths = [
+      "/usr/local/bin/tun2socks",
+      "/opt/homebrew/bin/tun2socks",
+      "/usr/bin/tun2socks",
+      NSHomeDirectory() + "/go/bin/tun2socks",
+    ]
+    for path in possiblePaths {
+      if FileManager.default.isExecutableFile(atPath: path) {
+        tun2socksBinaryPath = path
+        log("✓ Found system tun2socks binary at: \(path)")
+        return
+      }
+    }
+    log("⚠️ tun2socks binary not found in bundle or system paths.")
+  }
+
+  // MARK: - TUN VPN (utun + tun2socks, root-based)
+
+  private struct TunParams {
+    var socksPort: Int = 10808
+    var serverIp: String?
+  }
+
+  private func parseTunParams(configJson: String) -> TunParams {
+    var params = TunParams()
+    guard let data = configJson.data(using: .utf8),
+          let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+      return params
+    }
+    if let inbounds = json["inbounds"] as? [[String: Any]] {
+      for ib in inbounds {
+        if let proto = ib["protocol"] as? String, proto == "socks",
+           let port = ib["port"] as? Int {
+          params.socksPort = port
+        }
+      }
+    }
+    if let outbounds = json["outbounds"] as? [[String: Any]] {
+      for ob in outbounds {
+        if let tag = ob["tag"] as? String, tag == "proxy",
+           let settings = ob["settings"] as? [String: Any],
+           let vnext = settings["vnext"] as? [[String: Any]],
+           let addr = vnext.first?["address"] as? String {
+          params.serverIp = addr
+        }
+      }
+    }
+    return params
+  }
+
+  private var tunStateDir: String {
+    NSTemporaryDirectory() + "v2ray_tun/"
+  }
+
+  private func writeTunScript(_ name: String, _ content: String) -> String? {
+    let dir = tunStateDir
+    do {
+      try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+      let path = dir + name
+      try content.write(toFile: path, atomically: true, encoding: .utf8)
+      return path
+    } catch {
+      log("Failed to write TUN script \(name): \(error)")
+      return nil
+    }
+  }
+
+  private func setupTunVpn(socksPort: Int, serverIp: String?) -> Bool {
+    guard let tun2socks = tun2socksBinaryPath else {
+      log("❌ tun2socks binary not found, cannot start TUN VPN")
+      return false
+    }
+    guard let serverIp = serverIp, !serverIp.isEmpty else {
+      log("❌ Could not resolve VPN server IP, cannot start TUN VPN")
+      return false
+    }
+
+    log("========== Setting up TUN VPN (utun + tun2socks) ==========")
+    log("tun2socks: \(tun2socks)")
+    log("SOCKS port: \(socksPort)")
+    log("Server IP: \(serverIp)")
+
+    // The utun device is created by tun2socks itself (via com.apple.net.utun_control),
+    // NOT by "ifconfig utunN create" which fails with SIOCIFCREATE2 on modern macOS.
+    // We use a fixed high unit number to avoid clashing with system utun0-4/Private Relay.
+    let script = """
+    #!/bin/bash
+    set -e
+    DIR="@DIR@"
+    UTUN=utun100
+    GW=""
+    exec >> "$DIR/setup.log" 2>&1
+    echo "==== setup.sh start ===="
+    rm -f "$DIR/tun.pid" "$DIR/tun.iface" "$DIR/tun.gw" "$DIR/tun.server"
+    echo "Starting tun2socks (creates $UTUN)..."
+    "@TUN@" -device "$UTUN" -proxy socks5://127.0.0.1:@PORT@ -mtu 1500 -loglevel info > "$DIR/tun2socks.log" 2>&1 &
+    PID=$!
+    echo $PID > "$DIR/tun.pid"
+    # Wait for the utun interface to actually appear (tun2socks creates it asynchronously)
+    FOUND=""
+    for i in $(seq 1 20); do
+      if ! kill -0 $PID 2>/dev/null; then
+        echo "tun2socks exited early, log follows:"
+        cat "$DIR/tun2socks.log" 2>/dev/null || true
+        exit 20
+      fi
+      if ifconfig "$UTUN" >/dev/null 2>&1; then FOUND="yes"; break; fi
+      sleep 0.3
+    done
+    if [ -z "$FOUND" ]; then
+      echo "Device $UTUN was not created by tun2socks (waited 6s)"
+      cat "$DIR/tun2socks.log" 2>/dev/null || true
+      exit 21
+    fi
+    echo "Device $UTUN created. Assigning point-to-point address..."
+    ifconfig "$UTUN" inet 10.0.0.2 10.0.0.1 netmask 255.255.255.0 mtu 1500 up || { echo "addr failed"; exit 22; }
+    GW=$(route -n get default 2>/dev/null | awk '/gateway:/{print $2; exit}')
+    [ -z "$GW" ] && { echo "no default gateway"; exit 23; }
+    echo "Gateway: $GW"
+    # Host route for VPN server via the real gateway (prevents routing loop)
+    route -n add -host @SERVER@ "$GW" 2>/dev/null || true
+    # Default routes through the tunnel
+    route -n add -net 0.0.0.0/1 -interface "$UTUN" || { echo "route 1 failed"; exit 24; }
+    route -n add -net 128.0.0.0/1 -interface "$UTUN" || { echo "route 2 failed"; exit 25; }
+    echo "$UTUN" > "$DIR/tun.iface"
+    echo "$GW" > "$DIR/tun.gw"
+    echo "@SERVER@" > "$DIR/tun.server"
+    echo "==== setup.sh done ===="
+    exit 0
+    """
+
+    let rendered = script
+      .replacingOccurrences(of: "@DIR@", with: tunStateDir)
+      .replacingOccurrences(of: "@TUN@", with: tun2socks)
+      .replacingOccurrences(of: "@PORT@", with: String(socksPort))
+      .replacingOccurrences(of: "@SERVER@", with: serverIp)
+
+    guard let scriptPath = writeTunScript("setup.sh", rendered) else { return false }
+
+    log("Running TUN setup script as root...")
+    let ok = executeBatch(["bash \(scriptPath)"])
+    logSetupOutput()
+    if ok {
+      tunActive = true
+      log("✓ TUN VPN setup complete (utun created by tun2socks, routes added)")
+    } else {
+      log("❌ TUN VPN setup script failed (user cancelled or privileges denied)")
+      teardownTunVpn()
+    }
+    return ok
+  }
+
+  private func logSetupOutput() {
+    let paths = ["setup.log", "tun2socks.log"]
+    for name in paths {
+      let path = tunStateDir + name
+      guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+      for line in content.components(separatedBy: "\n") where !line.isEmpty {
+        log("[TUN-SETUP] \(line)")
+      }
+    }
+  }
+
+  private func teardownTunVpn() {
+    guard tunActive || FileManager.default.fileExists(atPath: tunStateDir + "tun.iface") else {
+      log("TUN teardown skipped (not active)")
+      return
+    }
+    log("========== Tearing down TUN VPN ==========")
+
+    let script = """
+    #!/bin/bash
+    DIR="@DIR@"
+    exec >> "$DIR/teardown.log" 2>&1
+    echo "==== teardown.sh start ===="
+    IFACE=$(cat $DIR/tun.iface 2>/dev/null)
+    PID=$(cat $DIR/tun.pid 2>/dev/null)
+    SERVER=$(cat $DIR/tun.server 2>/dev/null)
+    GW=$(cat $DIR/tun.gw 2>/dev/null)
+    [ -n "$PID" ] && kill $PID 2>/dev/null && echo "killed tun2socks pid $PID" || true
+    [ -n "$IFACE" ] && {
+      route -n delete -net 0.0.0.0/1 -interface $IFACE 2>/dev/null || true
+      route -n delete -net 128.0.0.0/1 -interface $IFACE 2>/dev/null || true
+      echo "deleted default routes on $IFACE"
+      # utun device disappears automatically when its socket closes (killed above);
+      # destroying the iface can throw SIOCIFDESTROY on modern macOS, ignore silently.
+      ifconfig $IFACE destroy 2>/dev/null || true
+    }
+    [ -n "$SERVER" ] && [ -n "$GW" ] && route -n delete -host $SERVER $GW 2>/dev/null || true
+    rm -f $DIR/tun.pid $DIR/tun.iface $DIR/tun.gw $DIR/tun.server
+    echo "==== teardown.sh done ===="
+    exit 0
+    """
+
+    let rendered = script.replacingOccurrences(of: "@DIR@", with: tunStateDir)
+
+    guard let scriptPath = writeTunScript("teardown.sh", rendered) else { return }
+    let ok = executeBatch(["bash \(scriptPath)"])
+    let logPath = tunStateDir + "teardown.log"
+    if let content = try? String(contentsOfFile: logPath, encoding: .utf8) {
+      for line in content.components(separatedBy: "\n") where !line.isEmpty {
+        log("[TUN-TEARDOWN] \(line)")
+      }
+    }
+    tunActive = false
+    log(ok ? "✓ TUN VPN teardown complete" : "⚠️ TUN VPN teardown failed or was denied")
+  }
   
   // MARK: - V2Ray Control Methods
   
@@ -162,7 +406,7 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
     
     log("========== Starting V2Ray (macOS) ==========")
     log("Server: \(remark)")
-    log("Mode: \(proxyOnly ? "Proxy Only" : "Proxy Only (VPN not available)")")
+    log("Mode: \(proxyOnly ? "Proxy Only" : "VPN (TUN + tun2socks)")")
     log("Config length: \(config.count) bytes")
     
     // Stop existing process if any
@@ -244,6 +488,7 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
       DispatchQueue.main.async {
         self?.log("V2Ray process terminated with code: \(proc.terminationStatus)")
         self?.isConnected = false
+        self?.teardownTunVpn()
         self?.eventSink?("disconnected")
       }
     }
@@ -265,11 +510,29 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
             self.log("  SOCKS5: 127.0.0.1:10808")
             self.log("  HTTP:   127.0.0.1:10809")
             self.log("")
-            self.log("Configure your browser/apps to use these proxies.")
-            self.log("")
             
-            self.isConnected = true
-            self.eventSink?("connected")
+            // VPN mode on macOS: set up root-based TUN (utun + tun2socks)
+            if !proxyOnly {
+              self.log("VPN mode: setting up TUN interface (utun + tun2socks)...")
+              let params = self.parseTunParams(configJson: config)
+              self.log("Parsed TUN params: socksPort=\(params.socksPort), serverIp=\(params.serverIp ?? "nil")")
+              self.log("  SOCKS5: 127.0.0.1:\(params.socksPort)")
+              let tunOk = self.setupTunVpn(socksPort: params.socksPort, serverIp: params.serverIp)
+              if tunOk {
+                self.log("✓ TUN VPN established - ALL system traffic routed through tunnel")
+                self.isConnected = true
+                self.eventSink?("connected")
+              } else {
+                self.log("❌ TUN VPN setup FAILED - system proxy NOT modified")
+                self.log("⚠️ Tunnel not active; only local SOCKS5 on 127.0.0.1:\(params.socksPort) is available")
+                self.isConnected = false
+                self.eventSink?("error")
+              }
+            } else {
+              self.log("Proxy-only mode requested - no TUN/VPN routes installed")
+              self.isConnected = true
+              self.eventSink?("connected")
+            }
           }
         } else {
           DispatchQueue.main.async {
@@ -288,6 +551,9 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
   
   private func stopV2Ray(result: @escaping FlutterResult) {
     log("Stopping V2Ray...")
+    
+    // Tear down TUN VPN (routes, utun interface, tun2socks)
+    teardownTunVpn()
     
     // Terminate process if running
     if let process = v2rayProcess {
@@ -348,6 +614,22 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
   
   private func getServerDelay(call: FlutterMethodCall, result: @escaping FlutterResult) {
     // Test connection through the HTTP proxy (more reliable than SOCKS with URLSession)
+    var httpPort = 10809
+    if let args = call.arguments as? [String: Any] {
+      if let configJson = args["config"] as? String,
+         let data = configJson.data(using: .utf8),
+         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+         let inbounds = json["inbounds"] as? [[String: Any]] {
+        for ib in inbounds {
+          if let proto = ib["protocol"] as? String, proto == "http",
+             let port = ib["port"] as? Int {
+            httpPort = port
+            break
+          }
+        }
+      }
+    }
+    
     DispatchQueue.global().async { [weak self] in
       let startTime = Date()
       
@@ -356,10 +638,10 @@ public class V2RayDanPlugin: NSObject, FlutterPlugin {
       config.connectionProxyDictionary = [
         kCFNetworkProxiesHTTPEnable: true,
         kCFNetworkProxiesHTTPProxy: "127.0.0.1",
-        kCFNetworkProxiesHTTPPort: 10809,
+        kCFNetworkProxiesHTTPPort: httpPort,
         kCFNetworkProxiesHTTPSEnable: true,
         kCFNetworkProxiesHTTPSProxy: "127.0.0.1",
-        kCFNetworkProxiesHTTPSPort: 10809
+        kCFNetworkProxiesHTTPSPort: httpPort
       ]
       config.timeoutIntervalForRequest = 10
       

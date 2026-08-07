@@ -19,7 +19,6 @@ import '../widgets/qr_scanner_screen.dart';
 import 'add_server_screen.dart';
 import 'ping_settings_screen.dart';
 import 'subscriptions_screen.dart';
-import '../models/subscription.dart';
 import 'webview_screen.dart';
 import 'logs_page.dart';
 
@@ -58,6 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _httpPort = 10809;
   bool _setSystemProxy = true;
   Map<String, String> _subscriptionMap = {};
+  String? _sortMode; // null = unsorted, 'time', 'ping'
 
   @override
   void initState() {
@@ -297,17 +297,25 @@ class _HomeScreenState extends State<HomeScreen> {
       _isPinging = true;
       _pingCompleted = 0;
       _pingTotal = _servers.length;
+      _pingResults = {};
     });
 
     final results = await _pingService.pingAllServers(
       _servers,
       _pingSettings,
-      _v2rayService, // Pass V2RayService for accurate pinging
+      _v2rayService,
       onProgress: (completed, total) {
         if (mounted) {
           setState(() {
             _pingCompleted = completed;
             _pingTotal = total;
+          });
+        }
+      },
+      onResult: (result) {
+        if (mounted) {
+          setState(() {
+            _pingResults[result.serverId] = result;
           });
         }
       },
@@ -534,6 +542,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           if (Platform.isAndroid) _buildProxyToggle(),
           if (Platform.isMacOS) ..._buildMacOSProxySettings(),
+          _buildSortRow(),
           Expanded(child: _buildServerList()),
         ],
       ),
@@ -549,13 +558,70 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  List<V2RayServer> _getSortedServers() {
+    final list = List<V2RayServer>.from(_servers);
+    if (_sortMode == 'ping') {
+      list.sort((a, b) {
+        final pa = _pingResults[a.id]?.latencyMs;
+        final pb = _pingResults[b.id]?.latencyMs;
+        if (pa == null && pb == null) return a.createdAt.compareTo(b.createdAt);
+        if (pa == null) return 1;
+        if (pb == null) return -1;
+        return pa.compareTo(pb);
+      });
+    } else if (_sortMode == 'time') {
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    }
+    return list;
+  }
+
+  Widget _buildSortRow() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
+        children: [
+          Text('SORT:', style: TextStyle(fontSize: 9, letterSpacing: 1.2, color: Colors.white.withValues(alpha: 0.25))),
+          const SizedBox(width: 8),
+          _sortChip('TIME', 'time'),
+          const SizedBox(width: 6),
+          _sortChip('PING', 'ping'),
+        ],
+      ),
+    );
+  }
+
+  Widget _sortChip(String label, String mode) {
+    final active = _sortMode == mode;
+    return GestureDetector(
+      onTap: () => setState(() => _sortMode = active ? null : mode),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: active ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: Colors.white.withValues(alpha: active ? 0.2 : 0.06)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 9,
+            letterSpacing: 1,
+            fontWeight: FontWeight.w700,
+            color: Colors.white.withValues(alpha: active ? 0.8 : 0.3),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildServerList() {
+    final servers = _getSortedServers();
     return ListView.builder(
       padding: const EdgeInsets.only(top: 0, bottom: 20),
-      itemCount: _servers.length + 1,
+      itemCount: servers.length + 1,
       itemBuilder: (context, index) {
         // Add Server Tile at the end
-        if (index == _servers.length) {
+        if (index == servers.length) {
           return Padding(
             padding: const EdgeInsets.only(top: 8, bottom: 32),
             child: InkWell(
@@ -589,7 +655,7 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         }
 
-        final server = _servers[index];
+        final server = servers[index];
         final pingResult = _pingResults[server.id];
         final isSelected = server.id == _selectedServerId;
 
@@ -608,6 +674,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildProxyToggle() {
+    final isLocked = _v2rayService.status == VPNConnectionStatus.connected ||
+        _v2rayService.status == VPNConnectionStatus.connecting;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       color: Colors.black,
@@ -635,12 +703,14 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           Switch(
             value: _proxyOnly,
-            onChanged: (value) async {
-              setState(() {
-                _proxyOnly = value;
-              });
-              await _storageService.saveProxyOnly(value);
-            },
+            onChanged: isLocked
+                ? null
+                : (value) async {
+                    setState(() {
+                      _proxyOnly = value;
+                    });
+                    await _storageService.saveProxyOnly(value);
+                  },
             activeThumbColor: AppTheme.accentColor,
             activeTrackColor: AppTheme.accentColor.withValues(alpha: 0.2),
           ),
@@ -657,6 +727,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildMacOSProxyModeSelector() {
+    final isLocked = _v2rayService.status == VPNConnectionStatus.connected ||
+        _v2rayService.status == VPNConnectionStatus.connecting;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       color: Colors.black,
@@ -665,11 +737,16 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Row(
             children: [
-              Icon(Icons.settings_ethernet, size: 16, color: Colors.white.withValues(alpha: 0.5)),
+              Icon(Icons.settings_ethernet, size: 16, color: Colors.white.withValues(alpha: isLocked ? 0.2 : 0.5)),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'PROXY TYPE',
-                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                  color: Colors.white.withValues(alpha: isLocked ? 0.3 : 1.0),
+                ),
               ),
             ],
           ),
@@ -681,7 +758,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: InkWell(
-                    onTap: () async {
+                    onTap: isLocked ? null : () async {
                       setState(() {
                         _proxyMode = mode;
                       });
@@ -692,11 +769,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
                         color: isSelected 
-                            ? AppTheme.accentColor.withValues(alpha: 0.2)
+                            ? AppTheme.accentColor.withValues(alpha: isLocked ? 0.05 : 0.2)
                             : Colors.white.withValues(alpha: 0.05),
                         border: Border.all(
                           color: isSelected 
-                              ? AppTheme.accentColor
+                              ? AppTheme.accentColor.withValues(alpha: isLocked ? 0.3 : 1.0)
                               : Colors.white.withValues(alpha: 0.1),
                           width: isSelected ? 2 : 1,
                         ),
@@ -710,8 +787,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
                           letterSpacing: 1.2,
                           color: isSelected 
-                              ? AppTheme.accentColor
-                              : Colors.white.withValues(alpha: 0.6),
+                              ? AppTheme.accentColor.withValues(alpha: isLocked ? 0.4 : 1.0)
+                              : Colors.white.withValues(alpha: isLocked ? 0.2 : 0.6),
                         ),
                       ),
                     ),

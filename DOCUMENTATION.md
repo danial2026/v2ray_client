@@ -24,26 +24,49 @@ The app supports VMess, the industry-standard obfuscation protocol with full con
 
 Full system VPN tunnel that routes all device traffic through V2Ray. Perfect for complete privacy and circumventing network restrictions.
 
+**Android:**
 - Creates a TUN interface managed by Android's VPN service
 - Routes all network traffic through the V2Ray core
 - Works with all apps automatically, no per-app configuration needed
 - Includes DNS leak protection to prevent exposure
 
+**macOS:**
+- Uses tun2socks + a utun interface (root-based TUN, via osascript admin prompt)
+- Routes all internet traffic through the tunnel with 0/1 and 128/1 subnet routes
+- No Apple Network Extension or paid developer account required — just admin password/Touch ID
+- utun interface auto-cleans up on disconnect
+
 #### Proxy-Only Mode
 
 Lightweight local proxy server without the VPN overhead. Ideal for development, testing, or when you only need specific apps to use the proxy.
 
-- SOCKS5 Proxy on port 10808
-- HTTP Proxy on port 10809
+- SOCKS5 Proxy on port 10808 (configurable)
+- HTTP Proxy on port 10809 (configurable)
 - Configure individual apps to use the proxy manually
-- Lower resource usage than VPN mode
-- No VPN permission required
+- On macOS, can optionally set system-wide proxy via networksetup
 
 ### Advanced Features
 
 #### Intelligent Ping System
 
-The app can automatically ping servers at configurable intervals (30 seconds, 1 minute, 5 minutes, 15 minutes, or never). You can choose between TCP ping, HTTP ping, or both for latency monitoring. Real-time latency is displayed for all configured servers, and you can optionally auto-select the server with the lowest ping.
+The app can automatically ping servers at configurable intervals (30 seconds, 1 minute, 5 minutes, 15 minutes, or never). You can choose between TCP ping, HTTP ping, or both for latency monitoring. Real-time latency is displayed for all configured servers — each ping result appears instantly as it completes, no need to wait for all servers. You can optionally auto-select the server with the lowest ping.
+
+#### Subscription Management
+
+Subscribe to server lists via URL with auto-import of all servers. The app parses the `subscription-userinfo` response header to display:
+- Remaining days until expiry (color-coded: red ≤3 days, orange ≤7 days, green otherwise)
+- Traffic usage bar (upload + download used vs. total limit)
+- Expandable server list under each subscription (read-only view)
+- Long-press any subscription to copy its URL to clipboard
+- One-tap refresh to re-import servers from the subscription
+
+#### Server Sorting
+
+Sort your server list by creation time (newest first) or ping latency (fastest first). Tap a sort chip to toggle — tapping an active sort deselects it and reverts to the unsorted list.
+
+#### QR Sharing & Scanning
+
+Quick server import/export via QR codes. Share any server as a QR code for instant import on other devices, or scan QR codes to add new servers without typing.
 
 #### Built-In Network Diagnostic Browser
 
@@ -105,20 +128,27 @@ The Kotlin layer manages the V2Ray core and Android VPN APIs.
 
 #### Swift (Native macOS Layer)
 
-The Swift layer provides desktop-integrated proxy management.
+The Swift layer provides full VPN tunneling and desktop-integrated proxy management.
 
 1. **V2RayDanPlugin.swift**:
-   - Executes bundled or system `v2ray`/`xray` binaries directly via `Process()`.
-   - Manages system-wide SOCKS (10808) and HTTP/HTTPS (10809) proxies.
-2. **Proxy Management**:
-   - Uses `networksetup` via `osascript` (with admin privileges) or `sudo` (authenticated via Touch ID).
+   - Executes bundled (v5.52.0) or system `v2ray`/`xray` binaries directly via `Process()`.
+   - **VPN mode**: Sets up a root-based TUN interface (`utun100`) via tun2socks binary, adds 0/1 and 128/1 routes for system-wide traffic capture. Uses `osascript` with administrator privileges for root access (Touch ID / password).
+   - **Proxy mode**: Manages system-wide SOCKS (10808) and HTTP/HTTPS (10809) proxies.
+2. **AppDelegate.swift**: Handles the `getUsageStats` method channel — reports upload/download bytes from the `lo0` interface and resident memory via `task_info`.
+3. **TUN Setup Flow**: 
+   - Launches tun2socks with `-device utun100` — the utun device is created by tun2socks via `com.apple.net.utun_control`, NOT by `ifconfig create` (broken on modern macOS).
+   - Polls for the interface (up to 6 seconds), then assigns `10.0.0.2 → 10.0.0.1` point-to-point address.
+   - Adds host route for the VPN server via the real gateway (prevents routing loop), then adds 0/1 and 128/1 default routes through utun100.
+   - On disconnect: kills tun2socks → utun auto-disappears, routes deleted, no trace left.
+4. **Proxy Management**:
+   - Uses `networksetup` via `osascript` (with admin privileges) for system proxy mode.
    - Primary interface detection via `/sbin/route` and hardware port mapping.
-3. **Latency Verification**: Implements native `getServerDelay` using `URLSession` proxied through the local core.
+5. **Latency Verification**: Implements native `getServerDelay` using `URLSession` proxied through the local core.
 
 #### Native Components
 
-- **V2Ray Core**: Official binary for Android (ARM64/ARMv7) and macOS (Intel/Apple Silicon).
-- **tun2socks**: Bridges TUN-to-SOCKS (Android VPN mode).
+- **V2Ray Core**: Official v5.52.0 binary (latest stable) for Android (ARM64/ARMv7) and macOS (ARM64 Apple Silicon / Intel).
+- **tun2socks**: Bridges TUN-to-SOCKS on both Android (VPN mode) and macOS (VPN mode). On macOS, creates the utun interface via `com.apple.net.utun_control`.
 
 ### Communication Flow
 
@@ -158,12 +188,21 @@ The Swift layer provides desktop-integrated proxy management.
 5. **Core**: `V2RayCoreManager` (via `libv2ray`) starts the V2Ray process with the JSON config.
 6. **Routing**: Traffic: TUN (172.19.0.1) -> `tun2socks` -> V2Ray SOCKS (10808) -> Remote.
 
-### How it Works: macOS (System Proxy)
+### How it Works: macOS (VPN Mode)
 
-1. **Binary Detection**: Swift searches for bundled `v2ray` or system `v2ray/xray` (Homebrew/local).
+1. **Binary Detection**: Swift searches for bundled `v2ray` (v5.52.0) or system `v2ray/xray` (Homebrew/local).
 2. **Execution**: Swift spawns the V2Ray process directly using `Process()` with `--run -c [config]`.
+3. **Core Startup**: After a 1-second delay to confirm the core is running, the plugin proceeds to TUN setup.
+4. **TUN Setup**: An admin-privileged script (via osascript) launches tun2socks, which creates the utun100 interface via `com.apple.net.utun_control`. The script assigns `10.0.0.2 → 10.0.0.1`, then adds 0/1 + 128/1 routes through utun100 to capture all traffic, plus a host route for the VPN server through the real gateway.
+5. **Traffic Flow**: App traffic → utun100 → tun2socks → V2Ray SOCKS5 (127.0.0.1:10808) → Remote server → Internet.
+6. **Teardown**: On disconnect, tun2socks is killed, routes are deleted, and the utun100 interface auto-disappears (no `ifconfig destroy` needed).
+
+### How it Works: macOS (Proxy Mode)
+
+1. **Binary Detection**: Same as VPN mode.
+2. **Execution**: Same as VPN mode.
 3. **Device Mapping**: Identifies primary interface (e.g., "Wi-Fi") using `route get default` and `networksetup`.
-4. **Proxy Setup**: Direct calls to `networksetup` (via `osascript` or `sudo` + Touch ID) set system-wide SOCKS/HTTP/HTTPS proxies.
+4. **Proxy Setup**: Direct calls to `networksetup` (via `osascript` + Touch ID) set system-wide SOCKS/HTTP/HTTPS proxies.
 5. **Bidirectional Logs**: Both platforms pipe process stdout/stderr back to Dart via dedicated MethodChannels.
 
 ---
@@ -184,7 +223,7 @@ Real-time feed with auto-scrolling log viewer. Toggle source filters between App
 
 ### Settings Screen
 
-Connection mode toggle switches between VPN and Proxy-Only modes. Configure ping settings for auto-ping interval and method. Choose DNS settings from presets (Google, Cloudflare, Quad9, or custom). Enable or disable kill switch for crash protection. View app info including version number and developer website. Use the reset VPN button as an emergency reset to clear stuck states.
+Connection mode toggle switches between VPN and Proxy-Only modes. Configurable SOCKS and HTTP ports. Configure ping settings for auto-ping interval and method. Choose DNS settings from presets (Google, Cloudflare, Quad9, or custom). Toggle usage stats display in AppBar. Enable or disable kill switch for crash protection. View app info including version number and developer website. Use the reset VPN button as an emergency reset to clear stuck states.
 
 ### Browser Screen
 
@@ -238,9 +277,10 @@ VPN mode uses roughly 70-120MB RAM with minimal CPU when idle. Proxy mode uses r
 - Permissions: VPN, Internet, Foreground Service, Wake Lock
 
 ### macOS
-- macOS 11.0 (Big Sur) or higher
-- Intel or Apple Silicon (M1/M2/M3)
-- Permissions: System Proxy configuration, Local Network, Internet
+- macOS 11.0 (Big Sur) or higher (tested on macOS 26)
+- Intel or Apple Silicon (M1/M2/M3/M4)
+- VPN mode: requires admin password or Touch ID for root TUN setup
+- Proxy mode: requires admin password or Touch ID for system proxy
 
 ---
 
@@ -251,53 +291,56 @@ VPN mode uses roughly 70-120MB RAM with minimal CPU when idle. Proxy mode uses r
 - Flutter 3.0+
 - Dart SDK 3.10+
 - Kotlin for Android native plugin
-- V2Ray Core official release (embedded)
-- tun2socks for TUN-to-SOCKS bridging
+- Swift for macOS native plugin
+- V2Ray Core v5.52.0 (official v2fly release, embedded)
+- tun2socks for TUN-to-SOCKS bridging (Android + macOS)
 
 ### Project Structure
 
 ```
 v2ray_flutter_app/
-├── lib/                          # Flutter/Dart code
-│   ├── main.dart                 # App entry point
-│   ├── models/                   # Data models (Server, PingResult, etc.)
-│   ├── screens/                  # UI screens (Home, Logs, Settings, etc.)
-│   ├── services/                 # Business logic (V2Ray, Storage, Ping)
-│   ├── widgets/                  # Reusable UI components
-│   └── theme/                    # App theme and colors
+├── lib/
+│   ├── main.dart
+│   ├── models/
+│   ├── screens/
+│   ├── services/
+│   ├── widgets/
+│   └── theme/
 │
-├── packages/
-│   └── v2ray_dan/                # Custom V2Ray plugin
-│       ├── lib/                  # Dart plugin interface
-│       └── android/
-│           └── src/main/kotlin/
-│               └── com/v2ray/dan/
-│                   ├── V2RayDanPlugin.kt
-│                   ├── V2RayCoreManager.kt
-│                   ├── V2RayVPNService.kt
-│                   ├── V2RayProxyOnlyService.kt
-│                   ├── Utilities.kt
-│                   └── AppConfigs.kt
-│
-├── android/                      # Android-specific configuration
+├── android/
 │   ├── app/
 │   │   ├── src/main/
 │   │   │   ├── AndroidManifest.xml
-│   │   │   ├── kotlin/           # MainActivity
-│   │   │   └── assets/           # V2Ray core binaries
+│   │   │   ├── kotlin/
+│   │   │   └── assets/
 │   │   └── build.gradle
 │   └── build.gradle
 │
-├── macos/                        # macOS-specific configuration
-│   ├── Runner/
-│   │   ├── MainFlutterWindow.swift
-│   │   ├── AppDelegate.swift
-│   │   └── V2RayDanPlugin.swift   # macOS Native Plugin Implementation
-│   └── build.gradle
+├── macos/
+│   └── Runner/
+│       ├── MainFlutterWindow.swift
+│       └── AppDelegate.swift
 │
-├── assets/                       # App assets (logo, etc.)
-├── pubspec.yaml                  # Flutter dependencies
-└── README.md
+└── packages/
+    └── v2ray_dan/
+        ├── lib/
+        ├── macos/
+        │   ├── Classes/
+        │   │   └── V2RayDanPlugin.swift
+        │   └── Resources/
+        │       ├── v2ray
+        │       ├── tun2socks
+        │       ├── geoip.dat
+        │       └── geosite.dat
+        └── android/
+            └── src/main/kotlin/
+                └── com/v2ray/dan/
+                    ├── V2RayDanPlugin.kt
+                    ├── V2RayCoreManager.kt
+                    ├── V2RayVPNService.kt
+                    ├── V2RayProxyOnlyService.kt
+                    ├── Utilities.kt
+                    └── AppConfigs.kt
 ```
 
 ### Building from Source
@@ -351,7 +394,7 @@ For privacy, use Cloudflare (1.1.1.1) or Quad9 (9.9.9.9). For speed, use Google 
 
 ### When to Use Each Mode
 
-Use VPN mode when you want all apps and system traffic proxied. Use proxy mode when you want manual control or lower resource usage.
+Use VPN mode when you want all apps and system traffic proxied (full tunnel). On macOS, this provides a true system-wide VPN via tun2socks + utun. Use proxy mode when you want manual control, lower resource usage, or don't need system-wide coverage.
 
 ---
 

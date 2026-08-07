@@ -82,6 +82,7 @@ class PingService {
     PingSettings settings,
     dynamic provider, {
     void Function(int completed, int total)? onProgress,
+    void Function(PingResult result)? onResult,
   }) async {
     final results = <String, PingResult>{};
     final totalServers = servers.length;
@@ -92,6 +93,7 @@ class PingService {
       results[server.id] = result;
 
       completedServers++;
+      onResult?.call(result);
       if (onProgress != null) {
         onProgress(completedServers, totalServers);
       }

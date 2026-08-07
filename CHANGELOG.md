@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.0.10] - 2026-08-07
+### Added
+- **macOS Real VPN**: Full tunnel mode via tun2socks + utun (no Apple NE entitlement needed)
+- **macOS Usage Stats**: Upload/download/memory counters now work on macOS
+
+### Fixed
+- macOS VPN mode no longer changes system proxy (fixes proxy left dangling on disconnect)
+- macOS TUN device creation now works on macOS 26+ (removed broken `ifconfig create`)
+- Custom ports now properly used in logs and status display
+- Fixed TUN failure silently showing connected status (plugin sends error correctly now)
+
+### Changed
+- Updated V2Ray core from 5.41.0 to 5.52.0 (latest stable)
+
+---
+
 ## [0.0.9] - 2026-08-07
 ### Added
 - **Subscription Management**: Subscribe to server lists via URL with auto-import.

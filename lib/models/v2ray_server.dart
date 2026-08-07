@@ -26,6 +26,7 @@ class V2RayServer {
   final String? shortId; // For Reality
   final String? spiderX; // For Reality
   final String? subscriptionId; // Tag servers from a subscription
+  final DateTime createdAt;
 
   V2RayServer({
     required this.id,
@@ -50,7 +51,8 @@ class V2RayServer {
     this.shortId,
     this.spiderX,
     this.subscriptionId,
-  });
+    DateTime? createdAt,
+  }) : createdAt = createdAt ?? DateTime.now();
 
   // Parse from any supported link
   factory V2RayServer.fromAnyLink(String link) {
@@ -196,6 +198,7 @@ class V2RayServer {
       'shortId': shortId,
       'spiderX': spiderX,
       'subscriptionId': subscriptionId,
+      'createdAt': createdAt.millisecondsSinceEpoch,
     };
   }
 
@@ -224,6 +227,9 @@ class V2RayServer {
       shortId: json['shortId'] as String?,
       spiderX: json['spiderX'] as String?,
       subscriptionId: json['subscriptionId'] as String?,
+      createdAt: json['createdAt'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(json['createdAt'] as int)
+          : null,
     );
   }
 
